@@ -1,0 +1,3 @@
+[submodule "uralsteel-grpc-api"]
+	path = uralsteel-grpc-api
+	url = git@github.com:IamiL/uralsteel-grpc-api.git
