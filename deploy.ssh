@@ -1,0 +1,6 @@
+cd ~
+wget -qO- https://astral.sh/uv/install.sh | sh
+git clone --recurse-submodules https://github.com/NikolaySus/uralsteel-llm-router.git
+cd uralsteel-llm-router
+uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=. --grpc_python_out=. llm.proto
+uv run --env-file .env .\main.py

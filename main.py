@@ -1,4 +1,9 @@
-"""gRPC сервер для взаимодействия с языковой моделью."""
+r"""
+gRPC сервер для взаимодействия с языковой моделью.
+Команды для генерации llm_pb2.py и llm_pb2_grpc.py из llm.proto:
+uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
+--grpc_python_out=. llm.proto
+"""
 
 from datetime import datetime
 from concurrent import futures
@@ -13,22 +18,10 @@ import llm_pb2
 import llm_pb2_grpc
 
 
-# Команды для генерации llm_pb2.py и llm_pb2_grpc.py из llm.proto:
-# uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
-# --grpc_python_out=. llm.proto
-#
-# Запуск vLLM сервера с моделью DeepSeek-R1-Distill-Qwen-1.5B для тестирования:
-# docker run -it -v C:/Users/gorku/.cache/huggingface:/root/.cache/huggingface
-# --runtime nvidia --gpus all
-# --env "HUGGING_FACE_HUB_TOKEN=$HUGGING_FACE_HUB_TOKEN" -p 8008:8000
-# --ipc=host vllm/vllm-openai:latest
-# --model deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B
-# --reasoning-parser deepseek_r1 --gpu-memory-utilization 0.8
-# --max-model-len 65536 --api-key uralsteel
-#
 MODEL = os.getenv('MODEL', "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 BASE_URL = os.getenv('BASE_URL', "http://127.0.0.1:8008/v1")
 API_KEY = os.getenv('API_KEY', "uralsteel")
+CLOUD_FOLDER = os.getenv('CLOUD_FOLDER', "uralsteel")
 
 
 class LlmServicer(llm_pb2_grpc.LlmServicer):
@@ -50,61 +43,71 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         "You are helpfull and highly skilled LLM-powered "
                         "assistant that always follows best practices. "
                         f"The base LLM is {MODEL}. Current date and time: "
-                        f"{datetime.now().strftime("%Y-%m-%dT%H:%M:%S")}. "
+                        f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}. "
                         "Note that current date and time are relevant only "
-                        "for last message, previous ones could be sent a "
-                        "long time ago."
+                        "for last message, previous ones could be sent a long "
+                        "time ago. Respond in the same language as the user."
                     )
                 }
             ]
             if history:
                 for message in history:
                     messages.append({
-                        "role": llm_pb2.Role.Name(message.role), "content": message.body
+                        "role": llm_pb2.Role.Name(message.role),
+                        "content": message.body
                     })
             messages.append({"role": "user", "content": user_message})
-            client = OpenAI(
+            response = OpenAI(
                 base_url=BASE_URL,
                 api_key=API_KEY,
-            )
-            stream = client.responses.create(
+                project=CLOUD_FOLDER,
+            ).chat.completions.create(
                 model=MODEL,
-                input=messages,
-                stream=True,
+                messages=messages,
+                max_tokens=2000,
+                temperature=0.3,
+                stream=True
             )
-            delta_id = 0
-            type = None
-            text = None
-            number = None
-            for event in stream:
-                if event.type == "response.reasoning_text.delta":
-                    number = event.sequence_number + delta_id
-                    type = llm_pb2.NewMessageResponseType.middle
-                    text = event.delta
-                elif event.type == "response.output_text.delta":
-                    number = event.sequence_number + delta_id
-                    type = llm_pb2.NewMessageResponseType.middle
-                    text = event.delta
-                elif event.type == "response.reasoning_text.done":
-                    number = event.sequence_number + delta_id
-                    delta_id = event.sequence_number - 2
-                    type = llm_pb2.NewMessageResponseType.last
-                    text = event.text
-                elif event.type == "response.output_text.done":
-                    number = event.sequence_number + delta_id
-                    delta_id = event.sequence_number - 2
-                    type = llm_pb2.NewMessageResponseType.last
-                    text = event.text
-                elif event.type == "response.output_item.added":
-                    delta_id -= event.sequence_number
-                    number = event.sequence_number + delta_id
-                    type = llm_pb2.NewMessageResponseType.first
-                    text = event.item.type
-                    delta_id -= 1
-                else:
-                    continue
-                yield llm_pb2.NewMessageResponse(
-                    type=type, body=text, msg_number=number)
+            for chunk in response:
+                delta_content = None
+                delta_reasoning_content = None
+                finish_reason = None
+                if hasattr(chunk, "choices") and chunk.choices:
+                    delta = getattr(chunk.choices[0], "delta", None)
+                    finish_reason = getattr(chunk.choices[0], "finish_reason", None)
+                    if delta and getattr(delta, "content", None) is not None:
+                        delta_content = delta.content
+                    if delta and getattr(delta, "reasoning_content", None) is not None:
+                        delta_reasoning_content = delta.reasoning_content
+                completion_tokens = None
+                prompt_tokens = None
+                total_tokens = None
+                if hasattr(chunk, "usage") and chunk.usage:
+                    usage = chunk.usage
+                    completion_tokens = getattr(usage, "completion_tokens", 0)
+                    prompt_tokens = getattr(usage, "prompt_tokens", 0)
+                    total_tokens = getattr(usage, "total_tokens", 0)
+                if finish_reason is not None and finish_reason == "stop" or (
+                    completion_tokens is not None and (
+                    prompt_tokens is not None and total_tokens is not None)):
+                    yield llm_pb2.NewMessageResponse(
+                        type=llm_pb2.NewMessageResponseType.last,
+                        body=f"{prompt_tokens}+{completion_tokens}={total_tokens}|{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}",
+                        msg_number=0
+                    )
+                elif delta_reasoning_content is not None:
+                    yield llm_pb2.NewMessageResponse(
+                        type=llm_pb2.NewMessageResponseType.middle,
+                        body=delta_reasoning_content + "|" + datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+                        msg_number=1
+                    )
+                elif delta_content is not None:
+                    yield llm_pb2.NewMessageResponse(
+                        type=llm_pb2.NewMessageResponseType.middle,
+                        body=delta_content + "|" + datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
+                        msg_number=2
+                    )
+                print(chunk)
         except Exception as e:
             print(e)
 
@@ -121,6 +124,22 @@ def serve():
 
 
 if __name__ == "__main__":
-    print(f"Globals:\nMODEL={MODEL}\nBASE_URL={BASE_URL}\nAPI_KEY={API_KEY}")
-    logging.basicConfig()
-    serve()
+    print(f"Globals:\nMODEL={MODEL}\nBASE_URL={BASE_URL}\n"
+          f"API_KEY={API_KEY}\nCLOUD_FOLDER={CLOUD_FOLDER}")
+    client = OpenAI(
+        base_url=BASE_URL,
+        api_key=API_KEY,
+        project=CLOUD_FOLDER,
+    )
+    models_list = client.models.list()
+    print("Available models:")
+    check_arr = []
+    for model in models_list.data:
+        print(model.id)
+        check_arr.append(model.id)
+    if MODEL not in check_arr:
+        print(f"ERROR: Model {MODEL} not found in available models!")
+    else:
+        print(f"Model {MODEL} found in available models. Starting server...")
+        logging.basicConfig()
+        serve()
