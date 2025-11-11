@@ -7,4 +7,3 @@ git clone https://github.com/NikolaySus/uralsteel-llm-router.git
 cd uralsteel-llm-router
 git submodule init
 git submodule update
-uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=. --grpc_python_out=. llm.proto
