@@ -1,6 +1,6 @@
 r"""
 gRPC сервер для взаимодействия с языковой моделью.
-Команды для генерации llm_pb2.py и llm_pb2_grpc.py из llm.proto:
+Команда для генерации llm_pb2.py и llm_pb2_grpc.py из llm.proto:
 uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
 --grpc_python_out=. llm.proto
 """
@@ -68,48 +68,63 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 temperature=0.3,
                 stream=True
             )
-            for chunk in response:
-                delta_content = None
-                delta_reasoning_content = None
-                finish_reason = None
-                if hasattr(chunk, "choices") and chunk.choices:
-                    delta = getattr(chunk.choices[0], "delta", None)
-                    finish_reason = getattr(chunk.choices[0], "finish_reason", None)
-                    if delta and getattr(delta, "content", None) is not None:
-                        delta_content = delta.content
-                    if delta and getattr(delta, "reasoning_content", None) is not None:
-                        delta_reasoning_content = delta.reasoning_content
-                completion_tokens = None
-                prompt_tokens = None
-                total_tokens = None
-                if hasattr(chunk, "usage") and chunk.usage:
-                    usage = chunk.usage
-                    completion_tokens = getattr(usage, "completion_tokens", 0)
-                    prompt_tokens = getattr(usage, "prompt_tokens", 0)
-                    total_tokens = getattr(usage, "total_tokens", 0)
-                if finish_reason is not None and finish_reason == "stop" or (
-                    completion_tokens is not None and (
-                    prompt_tokens is not None and total_tokens is not None)):
-                    yield llm_pb2.NewMessageResponse(
-                        type=llm_pb2.NewMessageResponseType.last,
-                        body=f"{prompt_tokens}+{completion_tokens}={total_tokens}|{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}",
-                        msg_number=0
-                    )
-                elif delta_reasoning_content is not None:
-                    yield llm_pb2.NewMessageResponse(
-                        type=llm_pb2.NewMessageResponseType.middle,
-                        body=delta_reasoning_content + "|" + datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-                        msg_number=1
-                    )
-                elif delta_content is not None:
-                    yield llm_pb2.NewMessageResponse(
-                        type=llm_pb2.NewMessageResponseType.middle,
-                        body=delta_content + "|" + datetime.now().strftime('%Y-%m-%dT%H:%M:%S'),
-                        msg_number=2
-                    )
-                print(chunk)
+            try:
+                for chunk in response:
+                    if context.is_active() is False:
+                        print("Client cancelled, stopping stream.")
+                        break
+                    # delta content/reasoning_content, если есть
+                    delta_content = None
+                    delta_reasoning_content = None
+                    finish_reason = None
+                    if hasattr(chunk, "choices") and chunk.choices:
+                        choice0 = chunk.choices[0]
+                        delta = getattr(choice0, "delta", None)
+                        finish_reason = getattr(choice0, "finish_reason", None)
+                        if delta is not None:
+                            if getattr(delta, "content", None) is not None:
+                                delta_content = delta.content
+                            if getattr(delta, "reasoning_content", None) is not None:
+                                delta_reasoning_content = delta.reasoning_content
+                    # usage информация, если есть
+                    completion_tokens = None
+                    prompt_tokens = None
+                    total_tokens = None
+                    if hasattr(chunk, "usage") and chunk.usage:
+                        usage = chunk.usage
+                        completion_tokens = getattr(usage, "completion_tokens", None)
+                        prompt_tokens = getattr(usage, "prompt_tokens", None)
+                        total_tokens = getattr(usage, "total_tokens", None)
+                    # Если есть usage или конечный сигнал, отправка CompleteResponseType
+                    if (finish_reason == "stop") or (
+                        total_tokens is not None and (prompt_tokens is not None and completion_tokens is not None)
+                    ):
+                        yield llm_pb2.NewMessageResponse(
+                            complete=llm_pb2.CompleteResponseType(
+                                prompt_tokens=(prompt_tokens or 0),
+                                completion_tokens=(completion_tokens or 0),
+                                total_tokens=(total_tokens or 0),
+                                datetime=datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                            )
+                        )
+                    # Если один из delta content есть, отправка GenerateResponseType
+                    elif delta_content is not None or delta_reasoning_content is not None:
+                        yield llm_pb2.NewMessageResponse(
+                            generate=llm_pb2.GenerateResponseType(
+                                content=(delta_content or ""),
+                                reasoning_content=(delta_reasoning_content or ""),
+                                datetime=datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                            )
+                        )
+                    # Вывод предупреждения, если не удалось разобрать часть ответа
+                    else:
+                        print(f"WARN : {chunk}")
+            except Exception as e:
+                print(f"STREAM ERROR: {e}")
+            finally:
+                response.response.close()
         except Exception as e:
-            print(e)
+            print(f"ERROR: {e}")
 
 
 def serve():
