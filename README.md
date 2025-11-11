@@ -4,6 +4,7 @@
 ```
 wget -O - https://raw.githubusercontent.com/NikolaySus/uralsteel-llm-router/main/deploy.ssh | sudo bash
 source $HOME/.local/bin/env
+cd ~/uralsteel-llm-router/
 ```
 Затем создание .env файла с переменными BASE_URL, API_KEY, CLOUD_FOLDER, MODEL и запуск.
 ### Запуск
