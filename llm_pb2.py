@@ -25,7 +25,7 @@ _sym_db = _symbol_database.Default()
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tllm.proto\x12\x03llm\x1a\x1bgoogle/protobuf/empty.proto\"0\n\x07Message\x12\x17\n\x04role\x18\x01 \x01(\x0e\x32\t.llm.Role\x12\x0c\n\x04\x62ody\x18\x02 \x01(\t\"?\n\x11NewMessageRequest\x12\x0b\n\x03msg\x18\x01 \x01(\t\x12\x1d\n\x07history\x18\x02 \x03(\x0b\x32\x0c.llm.Message\"\x80\x01\n\x14GenerateResponseType\x12\x14\n\x07\x63ontent\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x1e\n\x11reasoning_content\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x10\n\x08\x64\x61tetime\x18\x03 \x01(\tB\n\n\x08_contentB\x14\n\x12_reasoning_content\"\xb8\x01\n\x14\x43ompleteResponseType\x12\x1a\n\rprompt_tokens\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12\x1e\n\x11\x63ompletion_tokens\x18\x02 \x01(\x05H\x01\x88\x01\x01\x12\x19\n\x0ctotal_tokens\x18\x03 \x01(\x05H\x02\x88\x01\x01\x12\x10\n\x08\x64\x61tetime\x18\x04 \x01(\tB\x10\n\x0e_prompt_tokensB\x14\n\x12_completion_tokensB\x0f\n\r_total_tokens\"~\n\x12NewMessageResponse\x12-\n\x08generate\x18\x01 \x01(\x0b\x32\x19.llm.GenerateResponseTypeH\x00\x12-\n\x08\x63omplete\x18\x02 \x01(\x0b\x32\x19.llm.CompleteResponseTypeH\x00\x42\n\n\x08response*5\n\x04Role\x12\x08\n\x04user\x10\x00\x12\r\n\tassistant\x10\x01\x12\n\n\x06system\x10\x02\x12\x08\n\x04tool\x10\x03\x32~\n\x03Llm\x12\x36\n\x04Ping\x12\x16.google.protobuf.Empty\x1a\x16.google.protobuf.Empty\x12?\n\nNewMessage\x12\x16.llm.NewMessageRequest\x1a\x17.llm.NewMessageResponse0\x01\x42\x0bZ\tproto/llmb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\tllm.proto\x12\x03llm\x1a\x1bgoogle/protobuf/empty.proto\"0\n\x07Message\x12\x17\n\x04role\x18\x01 \x01(\x0e\x32\t.llm.Role\x12\x0c\n\x04\x62ody\x18\x02 \x01(\t\"\xc9\x01\n\x11NewMessageRequest\x12\r\n\x03msg\x18\x01 \x01(\tH\x00\x12\x13\n\tmp3_chunk\x18\x02 \x01(\x0cH\x00\x12\x1d\n\x07history\x18\x03 \x03(\x0b\x32\x0c.llm.Message\x12\x1c\n\x0ftext2text_model\x18\x04 \x01(\tH\x01\x88\x01\x01\x12\x1e\n\x11speech2text_model\x18\x05 \x01(\tH\x02\x88\x01\x01\x42\t\n\x07payloadB\x12\n\x10_text2text_modelB\x14\n\x12_speech2text_model\"e\n\x16TranscribeResponseType\x12\x15\n\rtranscription\x18\x01 \x01(\t\x12\x15\n\x08\x64uration\x18\x02 \x01(\x02H\x00\x88\x01\x01\x12\x10\n\x08\x64\x61tetime\x18\x03 \x01(\tB\x0b\n\t_duration\"\x80\x01\n\x14GenerateResponseType\x12\x14\n\x07\x63ontent\x18\x01 \x01(\tH\x00\x88\x01\x01\x12\x1e\n\x11reasoning_content\x18\x02 \x01(\tH\x01\x88\x01\x01\x12\x10\n\x08\x64\x61tetime\x18\x03 \x01(\tB\n\n\x08_contentB\x14\n\x12_reasoning_content\"\xb8\x01\n\x14\x43ompleteResponseType\x12\x1a\n\rprompt_tokens\x18\x01 \x01(\x05H\x00\x88\x01\x01\x12\x1e\n\x11\x63ompletion_tokens\x18\x02 \x01(\x05H\x01\x88\x01\x01\x12\x19\n\x0ctotal_tokens\x18\x03 \x01(\x05H\x02\x88\x01\x01\x12\x10\n\x08\x64\x61tetime\x18\x04 \x01(\tB\x10\n\x0e_prompt_tokensB\x14\n\x12_completion_tokensB\x0f\n\r_total_tokens\"$\n\x12ModelsListResponse\x12\x0e\n\x06models\x18\x01 \x03(\t\"\xb1\x01\n\x12NewMessageResponse\x12\x31\n\ntranscribe\x18\x01 \x01(\x0b\x32\x1b.llm.TranscribeResponseTypeH\x00\x12-\n\x08generate\x18\x02 \x01(\x0b\x32\x19.llm.GenerateResponseTypeH\x00\x12-\n\x08\x63omplete\x18\x03 \x01(\x0b\x32\x19.llm.CompleteResponseTypeH\x00\x42\n\n\x08response*5\n\x04Role\x12\x08\n\x04user\x10\x00\x12\r\n\tassistant\x10\x01\x12\n\n\x06system\x10\x02\x12\x08\n\x04tool\x10\x03\x32\x9c\x02\n\x03Llm\x12\x36\n\x04Ping\x12\x16.google.protobuf.Empty\x1a\x16.google.protobuf.Empty\x12\x41\n\nNewMessage\x12\x16.llm.NewMessageRequest\x1a\x17.llm.NewMessageResponse(\x01\x30\x01\x12K\n\x18\x41vailableModelsText2Text\x12\x16.google.protobuf.Empty\x1a\x17.llm.ModelsListResponse\x12M\n\x1a\x41vailableModelsSpeech2Text\x12\x16.google.protobuf.Empty\x1a\x17.llm.ModelsListResponseB\x0bZ\tproto/llmb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -33,18 +33,22 @@ _builder.BuildTopDescriptorsAndMessages(DESCRIPTOR, 'llm_pb2', _globals)
 if not _descriptor._USE_C_DESCRIPTORS:
   _globals['DESCRIPTOR']._loaded_options = None
   _globals['DESCRIPTOR']._serialized_options = b'Z\tproto/llm'
-  _globals['_ROLE']._serialized_start=608
-  _globals['_ROLE']._serialized_end=661
+  _globals['_ROLE']._serialized_start=940
+  _globals['_ROLE']._serialized_end=993
   _globals['_MESSAGE']._serialized_start=47
   _globals['_MESSAGE']._serialized_end=95
-  _globals['_NEWMESSAGEREQUEST']._serialized_start=97
-  _globals['_NEWMESSAGEREQUEST']._serialized_end=160
-  _globals['_GENERATERESPONSETYPE']._serialized_start=163
-  _globals['_GENERATERESPONSETYPE']._serialized_end=291
-  _globals['_COMPLETERESPONSETYPE']._serialized_start=294
-  _globals['_COMPLETERESPONSETYPE']._serialized_end=478
-  _globals['_NEWMESSAGERESPONSE']._serialized_start=480
-  _globals['_NEWMESSAGERESPONSE']._serialized_end=606
-  _globals['_LLM']._serialized_start=663
-  _globals['_LLM']._serialized_end=789
+  _globals['_NEWMESSAGEREQUEST']._serialized_start=98
+  _globals['_NEWMESSAGEREQUEST']._serialized_end=299
+  _globals['_TRANSCRIBERESPONSETYPE']._serialized_start=301
+  _globals['_TRANSCRIBERESPONSETYPE']._serialized_end=402
+  _globals['_GENERATERESPONSETYPE']._serialized_start=405
+  _globals['_GENERATERESPONSETYPE']._serialized_end=533
+  _globals['_COMPLETERESPONSETYPE']._serialized_start=536
+  _globals['_COMPLETERESPONSETYPE']._serialized_end=720
+  _globals['_MODELSLISTRESPONSE']._serialized_start=722
+  _globals['_MODELSLISTRESPONSE']._serialized_end=758
+  _globals['_NEWMESSAGERESPONSE']._serialized_start=761
+  _globals['_NEWMESSAGERESPONSE']._serialized_end=938
+  _globals['_LLM']._serialized_start=996
+  _globals['_LLM']._serialized_end=1280
 # @@protoc_insertion_point(module_scope)

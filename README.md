@@ -6,12 +6,54 @@ wget -O - https://raw.githubusercontent.com/NikolaySus/uralsteel-llm-router/main
 source $HOME/.local/bin/env
 cd ~/uralsteel-llm-router/
 ```
-Затем создание .env файла с переменными BASE_URL, API_KEY, CLOUD_FOLDER, MODEL и запуск.
+Затем создание .env файла с переменными BASE_URL, API_KEY, CLOUD_FOLDER, MODEL, SPEECH2TEXT_OPEN_AI, SPEECH2TEXT_MODEL, BASE_URL_OPEN_AI для сервиса, SERVER_ADDRESS для интеграционного теста и запуск.
 ### Запуск
 ```
 cd ~/uralsteel-llm-router/
 uv run --env-file .env main.py
 ```
+### Интеграционный тест
+```
+cd ~/uralsteel-llm-router/
+uv run --env-file .env test.py
+```
+
+#### Описание интеграционных тестов
+
+Тестовый набор состоит из 7 интеграционных тестов:
+
+1. **test_01_ping** - Проверка работоспособности сервиса
+   - Вызывает RPC метод `Ping()`
+   - Проверяет получение ответа
+
+2. **test_02_available_models_text2text** - Список доступных Text2Text моделей
+   - Вызывает RPC метод `AvailableModelsText2Text()`
+   - **Проверяет, что список моделей не пустой** ✓
+   - Выводит все доступные модели
+
+3. **test_03_available_models_speech2text** - Список доступных Speech2Text моделей
+   - Вызывает RPC метод `AvailableModelsSpeech2Text()`
+   - **Проверяет, что список моделей не пустой**
+   - Выводит все доступные модели
+
+4. **test_04_new_message_text_no_history** - NewMessage с текстом без истории
+   - Отправляет текстовое сообщение
+   - Проверяет получение GenerateResponseType и CompleteResponseType
+
+5. **test_05_new_message_text_with_history** - NewMessage с текстом и историей
+   - Отправляет текстовое сообщение с историей разговора
+   - Проверяет получение GenerateResponseType и CompleteResponseType
+
+6. **test_06_new_message_audio_no_history** - NewMessage с аудио (mp3) без истории
+   - Отправляет mp3 файл чанками по 4KB
+   - Проверяет получение TranscribeResponseType, GenerateResponseType и CompleteResponseType
+   - Требует наличие файла `serial.mp3`
+
+7. **test_07_new_message_audio_with_history** - NewMessage с аудио (mp3) и историей
+   - Отправляет mp3 файл с историей разговора
+   - Проверяет получение всех типов ответов
+   - Требует наличие файла `serial.mp3`
+
 ### Добавление в качестве сервиса и запуск
 
 #### Создание systemd сервис-файла

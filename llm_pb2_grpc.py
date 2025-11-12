@@ -46,10 +46,20 @@ class LlmStub(object):
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
                 response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                 _registered_method=True)
-        self.NewMessage = channel.unary_stream(
+        self.NewMessage = channel.stream_stream(
                 '/llm.Llm/NewMessage',
                 request_serializer=llm__pb2.NewMessageRequest.SerializeToString,
                 response_deserializer=llm__pb2.NewMessageResponse.FromString,
+                _registered_method=True)
+        self.AvailableModelsText2Text = channel.unary_unary(
+                '/llm.Llm/AvailableModelsText2Text',
+                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                response_deserializer=llm__pb2.ModelsListResponse.FromString,
+                _registered_method=True)
+        self.AvailableModelsSpeech2Text = channel.unary_unary(
+                '/llm.Llm/AvailableModelsSpeech2Text',
+                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                response_deserializer=llm__pb2.ModelsListResponse.FromString,
                 _registered_method=True)
 
 
@@ -72,12 +82,30 @@ class LlmServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def NewMessage(self, request, context):
+    def NewMessage(self, request_iterator, context):
         """NewMessage - метод для отправки сообщения языковой модели и получения ответа.
-        Принимает: NewMessageRequest (сообщение пользователя + история)
-        Возвращает: поток (stream) из NewMessageResponse
-        Ключевое слово "stream" означает, что сервер будет отправлять множество ответов
-        для одного запроса, что позволяет получать текст по мере его генерации.
+        Принимает: поток из NewMessageRequest — это позволяет передавать либо одно
+        текстовое сообщение, либо поток чанков аудиофайла (для больших mp3).
+        Возвращает: поток (stream) из NewMessageResponse — сервер будет отправлять
+        промежуточные части генерации и финальную статистику по мере готовности.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AvailableModelsText2Text(self, request, context):
+        """AvailableModelsText2Text - получить список доступных Text2Text моделей.
+        Принимает: пустой объект (Empty)
+        Возвращает: ModelsListResponse со списком моделей
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AvailableModelsSpeech2Text(self, request, context):
+        """AvailableModelsSpeech2Text - получить список доступных Speech2Text моделей.
+        Принимает: пустой объект (Empty)
+        Возвращает: ModelsListResponse со списком моделей
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -91,10 +119,20 @@ def add_LlmServicer_to_server(servicer, server):
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
                     response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
-            'NewMessage': grpc.unary_stream_rpc_method_handler(
+            'NewMessage': grpc.stream_stream_rpc_method_handler(
                     servicer.NewMessage,
                     request_deserializer=llm__pb2.NewMessageRequest.FromString,
                     response_serializer=llm__pb2.NewMessageResponse.SerializeToString,
+            ),
+            'AvailableModelsText2Text': grpc.unary_unary_rpc_method_handler(
+                    servicer.AvailableModelsText2Text,
+                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                    response_serializer=llm__pb2.ModelsListResponse.SerializeToString,
+            ),
+            'AvailableModelsSpeech2Text': grpc.unary_unary_rpc_method_handler(
+                    servicer.AvailableModelsSpeech2Text,
+                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                    response_serializer=llm__pb2.ModelsListResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -141,7 +179,7 @@ class Llm(object):
             _registered_method=True)
 
     @staticmethod
-    def NewMessage(request,
+    def NewMessage(request_iterator,
             target,
             options=(),
             channel_credentials=None,
@@ -151,12 +189,66 @@ class Llm(object):
             wait_for_ready=None,
             timeout=None,
             metadata=None):
-        return grpc.experimental.unary_stream(
-            request,
+        return grpc.experimental.stream_stream(
+            request_iterator,
             target,
             '/llm.Llm/NewMessage',
             llm__pb2.NewMessageRequest.SerializeToString,
             llm__pb2.NewMessageResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AvailableModelsText2Text(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llm.Llm/AvailableModelsText2Text',
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            llm__pb2.ModelsListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AvailableModelsSpeech2Text(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llm.Llm/AvailableModelsSpeech2Text',
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            llm__pb2.ModelsListResponse.FromString,
             options,
             channel_credentials,
             insecure,
