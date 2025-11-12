@@ -22,6 +22,8 @@ MODEL = os.getenv('MODEL', "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 BASE_URL = os.getenv('BASE_URL', "http://127.0.0.1:8008/v1")
 API_KEY = os.getenv('API_KEY', "uralsteel")
 CLOUD_FOLDER = os.getenv('CLOUD_FOLDER', "uralsteel")
+SPEECH2TEXT_OPEN_AI = os.environ.get('SPEECH2TEXT_OPEN_AI', '')
+SPEECH2TEXT_MODEL = os.environ.get('SPEECH2TEXT_MODEL', '')
 
 
 class LlmServicer(llm_pb2_grpc.LlmServicer):
