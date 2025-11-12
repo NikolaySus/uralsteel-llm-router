@@ -27,6 +27,12 @@ SPEECH2TEXT_OPEN_AI = os.environ.get('SPEECH2TEXT_OPEN_AI', '')
 SPEECH2TEXT_MODEL = os.environ.get('SPEECH2TEXT_MODEL', '')
 BASE_URL_OPEN_AI = os.environ.get('BASE_URL_OPEN_AI', '')
 
+# Словил кринж с uv на линуксе...
+# Фикс для подстановки переменных окружения в другие переменные окружения
+for key, value in os.environ.items():
+    if "${" in value:
+        os.environ[key] = os.path.expandvars(value)
+
 
 def available_models(base_url: str, api_key: str, project: str):
     """Возвращает список доступных моделей в виде списка строк."""
