@@ -15,6 +15,7 @@ import llm_pb2_grpc
 # =============================================================================
 
 SERVER_ADDRESS = os.environ.get('SERVER_ADDRESS', 'localhost:50051')
+SECRET_KEY = os.environ.get('SECRET_KEY', '')
 TEST_MESSAGE = "Привет, как дела?"
 TEST_MESSAGE_WITH_HISTORY = "Подскажи какой сериал посмотреть интересненький."
 TEST_MP3_FILE = "serial.mp3"  # Путь к mp3 файлу

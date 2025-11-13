@@ -33,7 +33,7 @@ CLOUD_FOLDER = os.getenv('CLOUD_FOLDER', "uralsteel")
 SPEECH2TEXT_OPEN_AI = os.environ.get('SPEECH2TEXT_OPEN_AI', '')
 SPEECH2TEXT_MODEL = os.environ.get('SPEECH2TEXT_MODEL', '')
 BASE_URL_OPEN_AI = os.environ.get('BASE_URL_OPEN_AI', '')
-
+SECRET_KEY = os.environ.get('SECRET_KEY', '')
 
 
 def available_models(base_url: str, api_key: str, project: str):

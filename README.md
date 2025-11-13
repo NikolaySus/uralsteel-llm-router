@@ -1,12 +1,14 @@
 # uralsteel-llm-router
 ## Роутер.
+### Клиентским сервисам
+Вам нужен ```ca.key``` из этого репозитория и секретный ключ доступа (например, из ```.env``` файла)
 ### Деплой на сервере
 ```
 wget -O - https://raw.githubusercontent.com/NikolaySus/uralsteel-llm-router/main/deploy.ssh | sudo bash
 source $HOME/.local/bin/env
 cd ~/uralsteel-llm-router/
 ```
-Затем создание .env файла с переменными BASE_URL, API_KEY, CLOUD_FOLDER, MODEL, SPEECH2TEXT_OPEN_AI, SPEECH2TEXT_MODEL, BASE_URL_OPEN_AI для сервиса, SERVER_ADDRESS для интеграционного теста и запуск.
+Затем скачать ```.env``` файл с переменными среды и комментариями с инструкцией по созданию сертификата безопасности, выполнить инструкцию и произвести запуск. Файл ```.env``` предоставляется посредством защищённого канала передачи информации (лс в тг).
 ### Запуск
 ```
 cd ~/uralsteel-llm-router/
