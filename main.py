@@ -320,11 +320,18 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
 def serve():
     """Запуск gRPC сервера."""
+    with open("server.crt", "rb") as f:
+        server_cert = f.read()
+    with open("server.key", "rb") as f:
+        server_key = f.read()
+    server_creds = grpc.ssl_server_credentials(
+        [(server_key, server_cert)]
+    )
     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
     llm_pb2_grpc.add_LlmServicer_to_server(
         LlmServicer(), server
     )
-    server.add_insecure_port("[::]:50051")
+    server.add_secure_port("[::]:50051", server_creds)
     server.start()
     server.wait_for_termination()
 

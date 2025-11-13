@@ -32,6 +32,10 @@ TEST_HISTORY = [
     ),
 ]
 
+# Чтение доверенных сертификатов
+with open("ca.crt", "rb") as f:
+    TRUSTED_CERTS = f.read()
+CREDS = grpc.ssl_channel_credentials(root_certificates=TRUSTED_CERTS)
 
 # =============================================================================
 # ТЕСТЫ
@@ -44,7 +48,7 @@ class TestLlmService(unittest.TestCase):
         """Тест 1: Проверка работоспособности сервиса (Ping)."""
         print("")
         try:
-            stub = llm_pb2_grpc.LlmStub(grpc.insecure_channel(SERVER_ADDRESS))
+            stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
             response = stub.Ping(google_dot_protobuf_dot_empty__pb2.Empty())
             print("✓ Ping успешен!")
             self.assertIsNotNone(response)
@@ -56,7 +60,7 @@ class TestLlmService(unittest.TestCase):
         """Тест 2: Получить список доступных Text2Text моделей."""
         print("")
         try:
-            stub = llm_pb2_grpc.LlmStub(grpc.insecure_channel(SERVER_ADDRESS))
+            stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
             response = stub.AvailableModelsText2Text(
                 google_dot_protobuf_dot_empty__pb2.Empty())
 
@@ -81,7 +85,7 @@ class TestLlmService(unittest.TestCase):
         """Тест 3: Получить список доступных Speech2Text моделей."""
         print("")
         try:
-            stub = llm_pb2_grpc.LlmStub(grpc.insecure_channel(SERVER_ADDRESS))
+            stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
             response = stub.AvailableModelsSpeech2Text(
                 google_dot_protobuf_dot_empty__pb2.Empty())
 
@@ -107,7 +111,7 @@ class TestLlmService(unittest.TestCase):
         print("")
         print(f"Сообщение: {TEST_MESSAGE}")
 
-        stub = llm_pb2_grpc.LlmStub(grpc.insecure_channel(SERVER_ADDRESS))
+        stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
         # Формируем запрос с одним текстовым сообщением
         def request_generator():
@@ -164,7 +168,7 @@ class TestLlmService(unittest.TestCase):
         print(f"История: {len(TEST_HISTORY)} сообщений")
         print(f"Новое сообщение: {TEST_MESSAGE_WITH_HISTORY}")
 
-        stub = llm_pb2_grpc.LlmStub(grpc.insecure_channel(SERVER_ADDRESS))
+        stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
         # Формируем запрос с текстовым сообщением и историей
         def request_generator():
@@ -228,7 +232,7 @@ class TestLlmService(unittest.TestCase):
             print(f"⚠ Файл {TEST_MP3_FILE} не найден, пропускаем тест")
             self.skipTest(f"MP3 file {TEST_MP3_FILE} not found")
 
-        stub = llm_pb2_grpc.LlmStub(grpc.insecure_channel(SERVER_ADDRESS))
+        stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
         # Функция для отправки mp3 чанков
         def request_generator():
@@ -307,7 +311,7 @@ class TestLlmService(unittest.TestCase):
             print(f"⚠ Файл {TEST_MP3_FILE} не найден, пропускаем тест")
             self.skipTest(f"MP3 file {TEST_MP3_FILE} not found")
 
-        stub = llm_pb2_grpc.LlmStub(grpc.insecure_channel(SERVER_ADDRESS))
+        stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
         # Функция для отправки mp3 чанков с историей
         def request_generator():

@@ -211,6 +211,7 @@ __marimo__/
 
 # certificates
 ca.key
+ca.srl
 server.crt
 server.csr
 server.key
