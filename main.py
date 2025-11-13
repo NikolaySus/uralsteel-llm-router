@@ -19,6 +19,13 @@ import llm_pb2
 import llm_pb2_grpc
 
 
+# Словил кринж с systemd...
+# Фикс для подстановки переменных окружения в другие переменные окружения
+for key, value in os.environ.items():
+    if "${" in value:
+        os.environ[key] = os.path.expandvars(value)
+
+
 MODEL = os.getenv('MODEL', "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
 BASE_URL = os.getenv('BASE_URL', "http://127.0.0.1:8008/v1")
 API_KEY = os.getenv('API_KEY', "uralsteel")
@@ -27,11 +34,6 @@ SPEECH2TEXT_OPEN_AI = os.environ.get('SPEECH2TEXT_OPEN_AI', '')
 SPEECH2TEXT_MODEL = os.environ.get('SPEECH2TEXT_MODEL', '')
 BASE_URL_OPEN_AI = os.environ.get('BASE_URL_OPEN_AI', '')
 
-# Словил кринж с uv на линуксе...
-# Фикс для подстановки переменных окружения в другие переменные окружения
-for key, value in os.environ.items():
-    if "${" in value:
-        os.environ[key] = os.path.expandvars(value)
 
 
 def available_models(base_url: str, api_key: str, project: str):
