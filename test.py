@@ -1,4 +1,4 @@
-"""Интеграционные тесты для gRPC LLM сервиса."""
+"""Интеграционные тесты для gRPC LLM сервиса с авторизацией."""
 
 import unittest
 import os
@@ -37,32 +37,51 @@ with open("ca.crt", "rb") as f:
     TRUSTED_CERTS = f.read()
 CREDS = grpc.ssl_channel_credentials(root_certificates=TRUSTED_CERTS)
 
+
+# =============================================================================
+# ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
+# =============================================================================
+
+def get_metadata():
+    """Возвращает metadata с авторизацией для защищённых методов."""
+    if SECRET_KEY:
+        return [('authorization', f'Bearer {SECRET_KEY}')]
+    return []
+
+
 # =============================================================================
 # ТЕСТЫ
 # =============================================================================
 
 class TestLlmService(unittest.TestCase):
-    """Интеграционные тесты для gRPC LLM сервиса."""
+    """Интеграционные тесты для gRPC LLM сервиса с авторизацией."""
 
     def test_01_ping(self):
-        """Тест 1: Проверка работоспособности сервиса (Ping)."""
+        """Тест 1: Ping - публичный метод, БЕЗ авторизации."""
         print("")
         try:
-            stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
+            stub = llm_pb2_grpc.LlmStub(
+                grpc.secure_channel(SERVER_ADDRESS, CREDS))
+            # Ping НЕ требует авторизацию
             response = stub.Ping(google_dot_protobuf_dot_empty__pb2.Empty())
-            print("✓ Ping успешен!")
+            print("✓ Ping успешен! (метод доступен без SECRET_KEY)")
             self.assertIsNotNone(response)
         except Exception as e:
             print(f"✗ Ping не прошел: {e}")
             self.fail(f"Ping failed: {e}")
 
     def test_02_available_models_text2text(self):
-        """Тест 2: Получить список доступных Text2Text моделей."""
+        """Тест 2: AvailableModelsText2Text - требует авторизацию. \
+           Получить список доступных Text2Text моделей."""
         print("")
         try:
-            stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
+            stub = llm_pb2_grpc.LlmStub(
+                grpc.secure_channel(SERVER_ADDRESS, CREDS))
+            # Передаём авторизационный заголовок
             response = stub.AvailableModelsText2Text(
-                google_dot_protobuf_dot_empty__pb2.Empty())
+                google_dot_protobuf_dot_empty__pb2.Empty(),
+                metadata=get_metadata()
+            )
 
             print("✓ Успешно получен список моделей")
             print(f"Количество моделей: {len(response.models)}")
@@ -70,24 +89,27 @@ class TestLlmService(unittest.TestCase):
                 print("Список моделей:")
                 for model in response.models:
                     print(f"  - {model}")
-            else:
-                print("⚠ Text2Text сервис не настроен или не доступен")
 
             self.assertIsNotNone(response)
             self.assertGreater(len(response.models), 0,
-                               "Список Text2Text моделей должен быть непуст")
+                               "Список моделей не должен быть пустым")
 
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"AvailableModelsText2Text failed: {e}")
 
     def test_03_available_models_speech2text(self):
-        """Тест 3: Получить список доступных Speech2Text моделей."""
+        """Тест 3: AvailableModelsSpeech2Text - требует авторизацию. \
+           Получить список доступных Speech2Text моделей."""
         print("")
         try:
-            stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
+            stub = llm_pb2_grpc.LlmStub(
+                grpc.secure_channel(SERVER_ADDRESS, CREDS))
+            # Передаём авторизационный заголовок
             response = stub.AvailableModelsSpeech2Text(
-                google_dot_protobuf_dot_empty__pb2.Empty())
+                google_dot_protobuf_dot_empty__pb2.Empty(),
+                metadata=get_metadata()
+            )
 
             print("✓ Успешно получен ответ")
             print(f"Количество моделей: {len(response.models)}")
@@ -95,8 +117,6 @@ class TestLlmService(unittest.TestCase):
                 print("Список моделей:")
                 for model in response.models:
                     print(f"  - {model}")
-            else:
-                print("⚠ Speech2Text сервис не настроен или не доступен")
 
             self.assertIsNotNone(response)
             self.assertGreater(len(response.models), 0,
@@ -107,18 +127,19 @@ class TestLlmService(unittest.TestCase):
             self.fail(f"AvailableModelsSpeech2Text failed: {e}")
 
     def test_04_new_message_text_no_history(self):
-        """Тест 4: NewMessage с текстовым сообщением без истории."""
-        print("")
-        print(f"Сообщение: {TEST_MESSAGE}")
+        """Тест 4: NewMessage с текстовым сообщением без истории - \
+           требует авторизацию."""
+        print(f"\nСообщение: {TEST_MESSAGE}")
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        # Формируем запрос с одним текстовым сообщением
         def request_generator():
             yield llm_pb2.NewMessageRequest(msg=TEST_MESSAGE)
 
         try:
-            responses = stub.NewMessage(request_generator())
+            # Передаём авторизационный заголовок
+            responses = stub.NewMessage(request_generator(),
+                                        metadata=get_metadata())
 
             has_generate = False
             has_complete = False
@@ -163,14 +184,13 @@ class TestLlmService(unittest.TestCase):
             self.fail(f"NewMessage text no history failed: {e}")
 
     def test_05_new_message_text_with_history(self):
-        """Тест 5: NewMessage с текстовым сообщением и историей."""
-        print("")
-        print(f"История: {len(TEST_HISTORY)} сообщений")
+        """Тест 5: NewMessage с текстовым сообщением и историей - \
+           требует авторизацию."""
+        print(f"\nИстория: {len(TEST_HISTORY)} сообщений")
         print(f"Новое сообщение: {TEST_MESSAGE_WITH_HISTORY}")
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        # Формируем запрос с текстовым сообщением и историей
         def request_generator():
             yield llm_pb2.NewMessageRequest(
                 msg=TEST_MESSAGE_WITH_HISTORY,
@@ -178,7 +198,9 @@ class TestLlmService(unittest.TestCase):
             )
 
         try:
-            responses = stub.NewMessage(request_generator())
+            # Передаём авторизационный заголовок
+            responses = stub.NewMessage(request_generator(),
+                                        metadata=get_metadata())
 
             has_generate = False
             has_complete = False
@@ -223,29 +245,29 @@ class TestLlmService(unittest.TestCase):
             self.fail(f"NewMessage text with history failed: {e}")
 
     def test_06_new_message_audio_no_history(self):
-        """Тест 6: NewMessage с потоком mp3 чанков без истории."""
-        print("")
-        print(f"MP3 файл: {TEST_MP3_FILE}")
+        """Тест 6: NewMessage с потоком mp3 чанков без истории - \
+           требует авторизацию."""
+        print(f"\nMP3 файл: {TEST_MP3_FILE}")
 
-        # Проверяем наличие mp3 файла
         if not os.path.exists(TEST_MP3_FILE):
             print(f"⚠ Файл {TEST_MP3_FILE} не найден, пропускаем тест")
             self.skipTest(f"MP3 file {TEST_MP3_FILE} not found")
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        # Функция для отправки mp3 чанков
         def request_generator():
             chunk_size = 4096
-            with open(TEST_MP3_FILE, 'rb') as f:
+            with open(TEST_MP3_FILE, 'rb') as mp3_file:
                 while True:
-                    chunk = f.read(chunk_size)
+                    chunk = mp3_file.read(chunk_size)
                     if not chunk:
                         break
                     yield llm_pb2.NewMessageRequest(mp3_chunk=chunk)
 
         try:
-            responses = stub.NewMessage(request_generator())
+            # Передаём авторизационный заголовок
+            responses = stub.NewMessage(request_generator(),
+                                        metadata=get_metadata())
 
             has_transcribe = False
             has_generate = False
@@ -301,28 +323,25 @@ class TestLlmService(unittest.TestCase):
             self.fail(f"NewMessage audio no history failed: {e}")
 
     def test_07_new_message_audio_with_history(self):
-        """Тест 7: NewMessage с потоком mp3 чанков и историей."""
-        print("")
-        print(f"MP3 файл: {TEST_MP3_FILE}")
+        """Тест 7: NewMessage с потоком mp3 чанков и историей - \
+           требует авторизацию."""
+        print(f"\nMP3 файл: {TEST_MP3_FILE}")
         print(f"История: {len(TEST_HISTORY)} сообщений")
 
-        # Проверяем наличие mp3 файла
         if not os.path.exists(TEST_MP3_FILE):
             print(f"⚠ Файл {TEST_MP3_FILE} не найден, пропускаем тест")
             self.skipTest(f"MP3 file {TEST_MP3_FILE} not found")
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        # Функция для отправки mp3 чанков с историей
         def request_generator():
             chunk_size = 4096
             first_chunk = True
-            with open(TEST_MP3_FILE, 'rb') as f:
+            with open(TEST_MP3_FILE, 'rb') as mp3_file:
                 while True:
-                    chunk = f.read(chunk_size)
+                    chunk = mp3_file.read(chunk_size)
                     if not chunk:
                         break
-                    # Передаём историю в первом чанке
                     if first_chunk:
                         yield llm_pb2.NewMessageRequest(
                             mp3_chunk=chunk,
@@ -333,7 +352,9 @@ class TestLlmService(unittest.TestCase):
                         yield llm_pb2.NewMessageRequest(mp3_chunk=chunk)
 
         try:
-            responses = stub.NewMessage(request_generator())
+            # Передаём авторизационный заголовок
+            responses = stub.NewMessage(request_generator(),
+                                        metadata=get_metadata())
 
             has_transcribe = False
             has_generate = False
@@ -390,5 +411,12 @@ class TestLlmService(unittest.TestCase):
 
 
 if __name__ == "__main__":
-    # Запуск тестов с подробным выводом
+    # Информация о конфигурации
+    print("\n" + "="*70)
+    if SECRET_KEY:
+        print(f"✓ SECRET_KEY установлен - авторизация ВКЛЮЧЕНА")
+        print(f"  Защищённые методы требуют Bearer token")
+    else:
+        print(f"⚠ SECRET_KEY не установлен - авторизация отключена")
+    print("="*70)
     unittest.main(verbosity=2)

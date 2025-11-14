@@ -13,6 +13,7 @@ import os
 
 from google.protobuf import empty_pb2
 import grpc
+from grpc import aio
 from openai import OpenAI
 
 import llm_pb2
@@ -34,6 +35,81 @@ SPEECH2TEXT_OPEN_AI = os.environ.get('SPEECH2TEXT_OPEN_AI', '')
 SPEECH2TEXT_MODEL = os.environ.get('SPEECH2TEXT_MODEL', '')
 BASE_URL_OPEN_AI = os.environ.get('BASE_URL_OPEN_AI', '')
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
+
+
+# ============================================================================
+# АВТОРИЗАЦИЯ - Interceptor для проверки доступа
+# ============================================================================
+
+class AuthInterceptor(grpc.ServerInterceptor):
+    """
+    gRPC Interceptor для проверки авторизации на уровне протокола.
+    
+    Преимущества использования Interceptor вместо проверок в методах:
+    1. Проверка выполняется ДО вызова бизнес-логики (минимум затрат CPU)
+    2. Неавторизованные запросы отклоняются на уровне сети
+    3. Нет дублирования кода в каждом методе
+    4. Легко добавлять публичные методы без авторизации
+    
+    Методы без авторизации (public):
+    - Ping: используется для health-check'ов, должен быть всегда доступен
+    
+    Методы требующие авторизации (protected):
+    - NewMessage: взаимодействие с LLM, критичный ресурс
+    - AvailableModelsText2Text: получение информации о моделях
+    - AvailableModelsSpeech2Text: получение информации о моделях
+    """
+    
+    # Методы, которые НЕ требуют авторизацию (public)
+    PUBLIC_METHODS = {
+        '/llm.Llm/Ping',
+    }
+    
+    def intercept_service(self, continuation, handler_call_details):
+        """
+        Перехватывает каждый вызов RPC метода.
+        
+        handler_call_details.invocation_metadata содержит метаданные запроса,
+        включая авторизационные заголовки.
+        
+        Метод должен вернуть либо обработанный ответ, либо вызвать continuation()
+        для передачи запроса дальше.
+        """
+        method_name = handler_call_details.method
+        
+        # Если метод в списке публичных - пропускаем проверку авторизации
+        if method_name in self.PUBLIC_METHODS:
+            return continuation(handler_call_details)
+        
+        # Проверяем наличие авторизационных метаданных
+        metadata = dict(handler_call_details.invocation_metadata or [])
+        authorization = metadata.get('authorization', '')
+        
+        # Ожидаем формат "Bearer <SECRET_KEY>" или просто секретный ключ
+        secret_from_header = authorization.replace('Bearer ', '').strip()
+        
+        # Проверка секретного ключа
+        if not SECRET_KEY:
+            # Если SECRET_KEY не задан в env - логируем предупреждение
+            # но НЕ отклоняем запрос (для совместимости с dev средой)
+            print(f"⚠ WARNING: SECRET_KEY не установлен в переменных окружения. "
+                  f"Авторизация пропущена для метода {method_name}")
+            return continuation(handler_call_details)
+        
+        if secret_from_header != SECRET_KEY:
+            # Секретный ключ неверен - отклоняем запрос
+            print(f"❌ UNAUTHORIZED: Неверный или отсутствующий SECRET_KEY для метода {method_name}")
+            # Создаём обработчик ошибки
+            abort_handler = grpc.unary_unary_rpc_method_handler(
+                lambda request, context: context.abort(
+                    grpc.StatusCode.UNAUTHENTICATED,
+                    "Invalid or missing authorization"
+                )
+            )
+            return abort_handler(None, handler_call_details)
+        
+        # Секретный ключ верен - пропускаем запрос дальше
+        return continuation(handler_call_details)
 
 
 def available_models(base_url: str, api_key: str, project: str):
@@ -319,7 +395,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
 
 def serve():
-    """Запуск gRPC сервера."""
+    """Запуск gRPC сервера с авторизацией."""
     with open("server.crt", "rb") as f:
         server_cert = f.read()
     with open("server.key", "rb") as f:
@@ -327,7 +403,15 @@ def serve():
     server_creds = grpc.ssl_server_credentials(
         [(server_key, server_cert)]
     )
-    server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+    
+    # Создаём сервер с Interceptor для авторизации
+    # Interceptor будет проверять авторизацию для каждого RPC вызова
+    # ПЕРЕД тем как вызвать бизнес-логику метода
+    server = grpc.server(
+        futures.ThreadPoolExecutor(max_workers=10),
+        interceptors=[AuthInterceptor()]  # Добавляем Interceptor
+    )
+    
     llm_pb2_grpc.add_LlmServicer_to_server(
         LlmServicer(), server
     )
@@ -341,8 +425,20 @@ if __name__ == "__main__":
           f"API_KEY={API_KEY}\nCLOUD_FOLDER={CLOUD_FOLDER}\n"
           f"SPEECH2TEXT_OPEN_AI={SPEECH2TEXT_OPEN_AI}\n"
           f"SPEECH2TEXT_MODEL={SPEECH2TEXT_MODEL}\n"
-          f"BASE_URL_OPEN_AI={BASE_URL_OPEN_AI}")
-    print("Checking available models...")
+          f"BASE_URL_OPEN_AI={BASE_URL_OPEN_AI}\n"
+          f"SECRET_KEY={'***' if SECRET_KEY else '(not set)'}")
+    
+    # Информация о безопасности
+    if SECRET_KEY:
+        print("\n🔐 Авторизация ВКЛЮЧЕНА:")
+        print("   - Ping: публичный (без авторизации)")
+        print("   - NewMessage: требует авторизацию")
+        print("   - AvailableModelsText2Text: требует авторизацию")
+        print("   - AvailableModelsSpeech2Text: требует авторизацию")
+    else:
+        print("\n⚠ ВНИМАНИЕ: SECRET_KEY не установлен - авторизация отключена!")
+    
+    print("\nChecking available models...")
     check_arr = available_models(BASE_URL, API_KEY, CLOUD_FOLDER)
     check_arr_speech = available_models(BASE_URL_OPEN_AI,
                                         SPEECH2TEXT_OPEN_AI, None)

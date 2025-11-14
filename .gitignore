@@ -218,3 +218,6 @@ server.key
 
 # logs
 nohup.out
+
+# tmp files
+*.tmp
