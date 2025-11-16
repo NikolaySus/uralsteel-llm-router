@@ -164,7 +164,10 @@ class TestLlmService(unittest.TestCase):
                     print("\n✓ Завершено. Токены: "
                           f"prompt={comp.prompt_tokens}, "
                           f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}")
+                          f"total={comp.total_tokens}, "
+                          f"expected_cost_usd={comp.expected_cost_usd}")
+                    self.assertGreater(comp.expected_cost_usd, 0,
+                                      "expected_cost_usd должен быть > 0")
 
             print("\nРезультаты:")
             print(f"  - Получены GenerateResponseType: {has_generate}")
@@ -225,7 +228,10 @@ class TestLlmService(unittest.TestCase):
                     print("\n✓ Завершено. Токены: "
                           f"prompt={comp.prompt_tokens}, "
                           f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}")
+                          f"total={comp.total_tokens}, "
+                          f"expected_cost_usd={comp.expected_cost_usd}")
+                    self.assertGreater(comp.expected_cost_usd, 0,
+                                      "expected_cost_usd должен быть > 0")
 
             print("\nРезультаты:")
             print(f"  - Получены GenerateResponseType: {has_generate}")
@@ -302,7 +308,10 @@ class TestLlmService(unittest.TestCase):
                     print("\n✓ Завершено. Токены: "
                           f"prompt={comp.prompt_tokens}, "
                           f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}")
+                          f"total={comp.total_tokens}, "
+                          f"expected_cost_usd={comp.expected_cost_usd}")
+                    self.assertGreater(comp.expected_cost_usd, 0,
+                                      "expected_cost_usd должен быть > 0")
 
             print("\nРезультаты:")
             print(f"  - Получены TranscribeResponseType: {has_transcribe}")
@@ -389,7 +398,10 @@ class TestLlmService(unittest.TestCase):
                     print("\n✓ Завершено. Токены: "
                           f"prompt={comp.prompt_tokens}, "
                           f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}")
+                          f"total={comp.total_tokens}, "
+                          f"expected_cost_usd={comp.expected_cost_usd}")
+                    self.assertGreater(comp.expected_cost_usd, 0,
+                                      "expected_cost_usd должен быть > 0")
 
             print("\nРезультаты:")
             print(f"  - Получены TranscribeResponseType: {has_transcribe}")

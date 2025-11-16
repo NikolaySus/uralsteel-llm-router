@@ -135,7 +135,7 @@ def available_models(base_url: str, api_key: str, project: str):
     return check_arr
 
 
-def transcribe_audio_buffer(audio_buffer: BytesIO,
+def transcribe_audio(audio_buffer: BytesIO,
                             speech2text_override: str = None):
     """Транскрибирует собранный audio_buffer и возвращает кортеж
     (transcription_text, TranscribeResponseType proto).
@@ -145,7 +145,7 @@ def transcribe_audio_buffer(audio_buffer: BytesIO,
     Бросает ValueError, если конфигурация SPEECH2TEXT не задана.
     """
     if audio_buffer.tell() == 0:
-        return None, None
+        return None, None, None
 
     audio_buffer.seek(0)
     # Некоторым API требуется имя у файла
@@ -174,7 +174,7 @@ def transcribe_audio_buffer(audio_buffer: BytesIO,
         duration=duration,
         datetime=datetime.now().strftime(DATETIME_FORMAT)
     )
-    return text, proto
+    return text, proto, duration
 
 
 def build_messages_from_history(history, user_message: str,
@@ -212,7 +212,7 @@ def build_messages_from_history(history, user_message: str,
     return messages
 
 
-def responses_from_llm_chunk(chunk):
+def responses_from_llm_chunk(chunk, duration=None):
     """Преобразует один элемент потока ответа LLM в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     """
@@ -249,6 +249,10 @@ def responses_from_llm_chunk(chunk):
                 prompt_tokens=(prompt_tokens or 0),
                 completion_tokens=(completion_tokens or 0),
                 total_tokens=(total_tokens or 0),
+                expected_cost_usd=ALL_API_VARS["openai"]["price_coef"] *
+                                   (duration or 0) +
+                                   ALL_API_VARS["yandexai"]["price_coef"] *
+                                   (total_tokens or 0),
                 datetime=datetime.now().strftime(DATETIME_FORMAT)
             )
         )
@@ -315,6 +319,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             audio_buffer = BytesIO()
             text2text_override = None
             speech2text_override = None
+            duration = None
 
             # Собираем все данные из потока запросов
             for request in request_iter:
@@ -338,7 +343,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             # Если пришло аудио, транскрибируем его
             if audio_buffer.tell() > 0:
-                user_message, transcribe_proto = transcribe_audio_buffer(
+                user_message, transcribe_proto, duration = transcribe_audio(
                     audio_buffer,
                     speech2text_override
                 )
@@ -384,7 +389,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             print("Client cancelled, stopping stream.")
                             break
                         # Преобразуем chunk в один ответ protobuf (или None)
-                        resp = responses_from_llm_chunk(chunk)
+                        resp = responses_from_llm_chunk(chunk, duration)
                         if resp is not None:
                             yield resp
                 except Exception as e:
