@@ -45,7 +45,7 @@ SYSTEM_MESSAGE = {
     "content": (
         "You are LLM-powered agent for data extraction. "
         "User provides the model name and pricing page content. "
-        "The model is selected by the user from the list of models "
+        "The model is selected by the user from the list of default models "
         "provided, but on the pricing page this name may differ "
         "slightly or be included in a more general category. "
         "The task is to find the tariff for using this model. "
