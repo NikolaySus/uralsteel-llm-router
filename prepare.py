@@ -195,7 +195,9 @@ def get_coef(api_vars) -> float:
             result_coef = numerator / denominator
             return result_coef
         else:
-            return 0.0
+            raise ValueError(f"Pattern not found in response: {text}")
+    else:
+        raise ValueError(f"Failed to fetch pricing page: {long_string}")
 
 
 if __name__ == "__main__":
