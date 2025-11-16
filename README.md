@@ -18,6 +18,7 @@ wget -O - https://raw.githubusercontent.com/NikolaySus/uralsteel-llm-router/main
 source $HOME/.local/bin/env
 cd ~/uralsteel-llm-router/
 uv run python -m playwright install
+uv run python -m playwright install-deps
 ```
 Затем скачать `.env` файл с переменными среды и комментариями с инструкцией по созданию сертификата безопасности, выполнить инструкцию и произвести запуск. Файл `.env` предоставляется посредством защищённого канала передачи информации (лс в тг).
 ### Запуск

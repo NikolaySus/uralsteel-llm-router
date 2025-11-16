@@ -454,7 +454,7 @@ if __name__ == "__main__":
     # Скрэппинг цен (prepare.py)
     try:
         subprocess.run(
-            ["uv", "run", "--env-file", ".env", "prepare.py"],
+            ["/root/.local/bin/uv", "run", "--env-file", ".env", "prepare.py"],
             check=True
         )
         with open(CONFIG_PATH) as f:
