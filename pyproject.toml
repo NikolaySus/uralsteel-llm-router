@@ -6,6 +6,8 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "grpcio-tools>=1.76.0",
+    "markdownify>=1.2.0",
     "openai>=2.7.1",
+    "playwright>=1.56.0",
     "requests>=2.32.5",
 ]

@@ -8,12 +8,13 @@ uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
 from datetime import datetime
 from concurrent import futures
 from io import BytesIO
+import json
 import logging
 import os
+import subprocess
 
 from google.protobuf import empty_pb2
 import grpc
-from grpc import aio
 from openai import OpenAI
 
 import llm_pb2
@@ -26,15 +27,25 @@ for key, value in os.environ.items():
     if "${" in value:
         os.environ[key] = os.path.expandvars(value)
 
-
-MODEL = os.getenv('MODEL', "deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B")
-BASE_URL = os.getenv('BASE_URL', "http://127.0.0.1:8008/v1")
-API_KEY = os.getenv('API_KEY', "uralsteel")
-CLOUD_FOLDER = os.getenv('CLOUD_FOLDER', "uralsteel")
-SPEECH2TEXT_OPEN_AI = os.environ.get('SPEECH2TEXT_OPEN_AI', '')
-SPEECH2TEXT_MODEL = os.environ.get('SPEECH2TEXT_MODEL', '')
-BASE_URL_OPEN_AI = os.environ.get('BASE_URL_OPEN_AI', '')
+# Переменные окружения вида CONST_api_case
+# Пока CONST + YANDEXAI_/OPENAI_ + BASE_URL/FOLDER/KEY/MODEL/PRICES_URL
+CONST = "INFERENCE_API_"
+CONST_LEN = len(CONST)
+ALL_API_VARS = dict()
+for name, value in os.environ.items():
+    if name.startswith(CONST):
+        api_and_case = name[CONST_LEN:].lower()
+        delim = api_and_case.find("_")
+        api = api_and_case[:delim]
+        case = api_and_case[delim + 1:]
+        ALL_API_VARS.setdefault(api, dict())
+        ALL_API_VARS[api][case] = value
+# Секретный ключ для клиентского доступа к gRPC методам
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
+# Формат даты и времени
+DATETIME_FORMAT = os.environ.get('DATETIME_FORMAT', '%Y-%m-%dT%H:%M:%S')
+# Путь к конфигурационному файлу
+CONFIG_PATH = "config.json"
 
 
 # ============================================================================
@@ -59,12 +70,12 @@ class AuthInterceptor(grpc.ServerInterceptor):
     - AvailableModelsText2Text: получение информации о моделях
     - AvailableModelsSpeech2Text: получение информации о моделях
     """
-    
+
     # Методы, которые НЕ требуют авторизацию (public)
     PUBLIC_METHODS = {
         '/llm.Llm/Ping',
     }
-    
+
     def intercept_service(self, continuation, handler_call_details):
         """
         Перехватывает каждый вызов RPC метода.
@@ -72,33 +83,32 @@ class AuthInterceptor(grpc.ServerInterceptor):
         handler_call_details.invocation_metadata содержит метаданные запроса,
         включая авторизационные заголовки.
         
-        Метод должен вернуть либо обработанный ответ, либо вызвать continuation()
-        для передачи запроса дальше.
+        Метод должен вернуть либо обработанный ответ, либо вызвать
+        continuation() для передачи запроса дальше.
         """
         method_name = handler_call_details.method
-        
+
         # Если метод в списке публичных - пропускаем проверку авторизации
         if method_name in self.PUBLIC_METHODS:
             return continuation(handler_call_details)
-        
+
         # Проверяем наличие авторизационных метаданных
         metadata = dict(handler_call_details.invocation_metadata or [])
         authorization = metadata.get('authorization', '')
-        
+
         # Ожидаем формат "Bearer <SECRET_KEY>" или просто секретный ключ
         secret_from_header = authorization.replace('Bearer ', '').strip()
-        
+
         # Проверка секретного ключа
         if not SECRET_KEY:
             # Если SECRET_KEY не задан в env - логируем предупреждение
             # но НЕ отклоняем запрос (для совместимости с dev средой)
-            print(f"⚠ WARNING: SECRET_KEY не установлен в переменных окружения. "
-                  f"Авторизация пропущена для метода {method_name}")
+            print(f"SECRET_KEY not set, auth skip for method {method_name}")
             return continuation(handler_call_details)
-        
+
         if secret_from_header != SECRET_KEY:
             # Секретный ключ неверен - отклоняем запрос
-            print(f"❌ UNAUTHORIZED: Неверный или отсутствующий SECRET_KEY для метода {method_name}")
+            print(f"UNAUTHORIZED: bad SECRET_KEY for method {method_name}")
             # Создаём обработчик ошибки
             abort_handler = grpc.unary_unary_rpc_method_handler(
                 lambda request, context: context.abort(
@@ -107,7 +117,7 @@ class AuthInterceptor(grpc.ServerInterceptor):
                 )
             )
             return abort_handler(None, handler_call_details)
-        
+
         # Секретный ключ верен - пропускаем запрос дальше
         return continuation(handler_call_details)
 
@@ -130,18 +140,12 @@ def transcribe_audio_buffer(audio_buffer: BytesIO,
     """Транскрибирует собранный audio_buffer и возвращает кортеж
     (transcription_text, TranscribeResponseType proto).
 
-    Использует speech2text_override если задан, иначе SPEECH2TEXT_MODEL.
+    Использует speech2text_override если задан, иначе
+    ALL_API_VARS["openai"]["model"].
     Бросает ValueError, если конфигурация SPEECH2TEXT не задана.
     """
     if audio_buffer.tell() == 0:
         return None, None
-
-    if not SPEECH2TEXT_OPEN_AI or (
-        not SPEECH2TEXT_MODEL or not BASE_URL_OPEN_AI):
-        raise ValueError(
-            "Speech-to-text сервис не настроен: "
-            "SPEECH2TEXT_OPEN_AI, SPEECH2TEXT_MODEL, BASE_URL_OPEN_AI"
-        )
 
     audio_buffer.seek(0)
     # Некоторым API требуется имя у файла
@@ -151,11 +155,11 @@ def transcribe_audio_buffer(audio_buffer: BytesIO,
     if speech2text_override:
         model_to_use = speech2text_override
     else:
-        model_to_use = SPEECH2TEXT_MODEL
+        model_to_use = ALL_API_VARS["openai"]["model"]
 
     transcription = OpenAI(
-        base_url=BASE_URL_OPEN_AI,
-        api_key=SPEECH2TEXT_OPEN_AI,
+        base_url=ALL_API_VARS["openai"]["base_url"],
+        api_key=ALL_API_VARS["openai"]["key"],
     ).audio.transcriptions.create(
         model=model_to_use,
         file=audio_buffer
@@ -168,7 +172,7 @@ def transcribe_audio_buffer(audio_buffer: BytesIO,
     proto = llm_pb2.TranscribeResponseType(
         transcription=text,
         duration=duration,
-        datetime=datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+        datetime=datetime.now().strftime(DATETIME_FORMAT)
     )
     return text, proto
 
@@ -177,12 +181,13 @@ def build_messages_from_history(history, user_message: str,
                                 text2text_override: str = None):
     """Собирает список сообщений для LLM на основании history и user_message.
     
-    Использует text2text_override если задан, иначе MODEL.
+    Использует text2text_override если задан, иначе
+    ALL_API_VARS["yandexai"]["model"].
     """
     if text2text_override:
         model_to_use = text2text_override
     else:
-        model_to_use = MODEL
+        model_to_use = ALL_API_VARS["yandexai"]["model"]
     messages = [
         {
             "role": "system",
@@ -190,7 +195,7 @@ def build_messages_from_history(history, user_message: str,
                 "You are helpfull and highly skilled LLM-powered "
                 "assistant that always follows best practices. "
                 f"The base LLM is {model_to_use}. Current date and time: "
-                f"{datetime.now().strftime('%Y-%m-%dT%H:%M:%S')}. "
+                f"{datetime.now().strftime(DATETIME_FORMAT)}. "
                 "Note that current date and time are relevant only "
                 "for last message, previous ones could be sent a long "
                 "time ago. Respond in the same language as the user."
@@ -244,7 +249,7 @@ def responses_from_llm_chunk(chunk):
                 prompt_tokens=(prompt_tokens or 0),
                 completion_tokens=(completion_tokens or 0),
                 total_tokens=(total_tokens or 0),
-                datetime=datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                datetime=datetime.now().strftime(DATETIME_FORMAT)
             )
         )
     # Если один из delta content есть, создаём GenerateResponseType
@@ -253,11 +258,11 @@ def responses_from_llm_chunk(chunk):
             generate=llm_pb2.GenerateResponseType(
                 content=(delta_content or ""),
                 reasoning_content=(delta_reasoning_content or ""),
-                datetime=datetime.now().strftime('%Y-%m-%dT%H:%M:%S')
+                datetime=datetime.now().strftime(DATETIME_FORMAT)
             )
         )
     else:
-        # Не удалось разобрать часть ответа — предупреждаем и возвращаем None
+        # Не удалось разобрать часть ответа
         print(f"WARN: {chunk}")
         return None
 
@@ -273,7 +278,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
         """Получить список доступных Text2Text моделей."""
         try:
             return llm_pb2.ModelsListResponse(
-                models=available_models(BASE_URL, API_KEY, CLOUD_FOLDER))
+                models=available_models(ALL_API_VARS["yandexai"]["base_url"],
+                                        ALL_API_VARS["yandexai"]["key"],
+                                        ALL_API_VARS["yandexai"]["folder"]))
         except Exception as e:
             print(f"ERROR getting text2text models: {e}")
             context.set_details(f"ERROR getting text2text models: {e}")
@@ -284,8 +291,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
         """Получить список доступных Speech2Text моделей."""
         try:
             return llm_pb2.ModelsListResponse(
-                models=available_models(BASE_URL_OPEN_AI,
-                                        SPEECH2TEXT_OPEN_AI, None))
+                models=available_models(ALL_API_VARS["openai"]["base_url"],
+                                        ALL_API_VARS["openai"]["key"], None))
         except Exception as e:
             print(f"ERROR getting speech2text models: {e}")
             context.set_details(f"ERROR getting speech2text models: {e}")
@@ -355,16 +362,16 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if text2text_override:
                 model_to_use = text2text_override
             else:
-                model_to_use = MODEL
+                model_to_use = ALL_API_VARS["yandexai"]["model"]
 
             # Отправка запроса в OpenAI API на генерацию ответа, если
             # пользователь не отменял запрос
             if context.is_active():
                 try:
                     response = OpenAI(
-                        base_url=BASE_URL,
-                        api_key=API_KEY,
-                        project=CLOUD_FOLDER,
+                        base_url=ALL_API_VARS["yandexai"]["base_url"],
+                        api_key=ALL_API_VARS["yandexai"]["key"],
+                        project=ALL_API_VARS["yandexai"]["folder"],
                     ).chat.completions.create(
                         model=model_to_use,
                         messages=messages,
@@ -403,7 +410,7 @@ def serve():
     server_creds = grpc.ssl_server_credentials(
         [(server_key, server_cert)]
     )
-    
+
     # Создаём сервер с Interceptor для авторизации
     # Interceptor будет проверять авторизацию для каждого RPC вызова
     # ПЕРЕД тем как вызвать бизнес-логику метода
@@ -411,7 +418,7 @@ def serve():
         futures.ThreadPoolExecutor(max_workers=10),
         interceptors=[AuthInterceptor()]  # Добавляем Interceptor
     )
-    
+
     llm_pb2_grpc.add_LlmServicer_to_server(
         LlmServicer(), server
     )
@@ -421,35 +428,58 @@ def serve():
 
 
 if __name__ == "__main__":
-    print(f"Globals:\nMODEL={MODEL}\nBASE_URL={BASE_URL}\n"
-          f"API_KEY={API_KEY}\nCLOUD_FOLDER={CLOUD_FOLDER}\n"
-          f"SPEECH2TEXT_OPEN_AI={SPEECH2TEXT_OPEN_AI}\n"
-          f"SPEECH2TEXT_MODEL={SPEECH2TEXT_MODEL}\n"
-          f"BASE_URL_OPEN_AI={BASE_URL_OPEN_AI}\n"
-          f"SECRET_KEY={'***' if SECRET_KEY else '(not set)'}")
-    
+    # Вывод конфигурации API (ключи скрыты)
+    for key, value in ALL_API_VARS.items():
+        print(f"API config for {key}:")
+        for case_key, case_value in value.items():
+            if case_key == "key":
+                print(f"  {case_key}=***")
+            else:
+                print(f"  {case_key}={case_value}")
+    # Проверка конфигурации API
+    assert ALL_API_VARS["yandexai"]["prices_url"], "yandexai prices url is n/a"
+    assert ALL_API_VARS["yandexai"]["base_url"], "yandexai base url is n/a"
+    assert ALL_API_VARS["yandexai"]["key"], "yandexai api key is n/a"
+    assert ALL_API_VARS["yandexai"]["model"], "yandexai model is n/a"
+    assert ALL_API_VARS["yandexai"]["folder"], "yandexai folder is n/a"
+    assert ALL_API_VARS["openai"]["prices_url"], "openai prices url is n/a"
+    assert ALL_API_VARS["openai"]["base_url"], "openai base url is n/a"
+    assert ALL_API_VARS["openai"]["key"], "openai api key is n/a"
+    assert ALL_API_VARS["openai"]["model"], "openai model is n/a"
+    # Скрэппинг цен (prepare.py)
+    try:
+        subprocess.run(
+            ["uv", "run", "--env-file", ".env", "prepare.py"],
+            check=True
+        )
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+            print(f"Config generated at: {config.get('generated_at', 'n/a')}")
+            for name, coef in config.get("prices_coefs", {}).items():
+                ALL_API_VARS[name]["price_coef"] = coef
+                print(f"Price coef for {name}: {coef}")
+    except Exception as e:
+        print(f"ERROR: config gen fail: {e}")
+        exit(1)
     # Информация о безопасности
     if SECRET_KEY:
-        print("\n🔐 Авторизация ВКЛЮЧЕНА:")
-        print("   - Ping: публичный (без авторизации)")
-        print("   - NewMessage: требует авторизацию")
-        print("   - AvailableModelsText2Text: требует авторизацию")
-        print("   - AvailableModelsSpeech2Text: требует авторизацию")
+        print("Authorization ENABLED")
     else:
-        print("\n⚠ ВНИМАНИЕ: SECRET_KEY не установлен - авторизация отключена!")
-    
-    print("\nChecking available models...")
-    check_arr = available_models(BASE_URL, API_KEY, CLOUD_FOLDER)
-    check_arr_speech = available_models(BASE_URL_OPEN_AI,
-                                        SPEECH2TEXT_OPEN_AI, None)
-    if MODEL not in check_arr:
-        print(f"ERROR: Text2Text model {MODEL} not found in available models!")
-    elif SPEECH2TEXT_MODEL and (SPEECH2TEXT_MODEL not in check_arr_speech):
-        print(f"ERROR: Speech2Text model {SPEECH2TEXT_MODEL} not found in "
-              "available models!")
+        print("Authorization DISABLED - all requests will be accepted!")
+    # Проверка доступности моделей
+    print("Checking available models...")
+    check_arr = available_models(ALL_API_VARS["yandexai"]["base_url"],
+                                 ALL_API_VARS["yandexai"]["key"],
+                                 ALL_API_VARS["yandexai"]["folder"])
+    check_arr_speech = available_models(ALL_API_VARS["openai"]["base_url"],
+                                        ALL_API_VARS["openai"]["key"], None)
+    if ALL_API_VARS["yandexai"]["model"] not in check_arr:
+        print(f"ERROR: Text2Text model {ALL_API_VARS["yandexai"]["model"]} "
+              "not found in available models!")
+    elif ALL_API_VARS["openai"]["model"] not in check_arr_speech:
+        print(f"ERROR: Speech2Text model {ALL_API_VARS["openai"]["model"]} "
+              "not found in available models!")
     else:
-        print(f"Default Text2Text model set to {MODEL}\n"
-              f"Default Speech2Text model set to {SPEECH2TEXT_MODEL}\n"
-              "Starting server...")
+        print("Starting server...")
         logging.basicConfig()
         serve()

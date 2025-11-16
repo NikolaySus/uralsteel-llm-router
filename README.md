@@ -14,7 +14,7 @@
 
 ### Деплой на сервере
 ```bash
-wget -O - https://raw.githubusercontent.com/NikolaySus/uralsteel-llm-router/main/deploy.ssh | sudo bash
+wget -O - https://raw.githubusercontent.com/NikolaySus/uralsteel-llm-router/main/deploy.sh | sudo bash
 source $HOME/.local/bin/env
 cd ~/uralsteel-llm-router/
 ```
@@ -40,12 +40,12 @@ uv run --env-file .env test.py
 
 2. **test_02_available_models_text2text** - Список доступных Text2Text моделей
    - Вызывает RPC метод `AvailableModelsText2Text()`
-   - **Проверяет, что список моделей не пустой** ✓
+   - Проверяет, что список моделей не пустой
    - Выводит все доступные модели
 
 3. **test_03_available_models_speech2text** - Список доступных Speech2Text моделей
    - Вызывает RPC метод `AvailableModelsSpeech2Text()`
-   - **Проверяет, что список моделей не пустой**
+   - Проверяет, что список моделей не пустой
    - Выводит все доступные модели
 
 4. **test_04_new_message_text_no_history** - NewMessage с текстом без истории
@@ -65,6 +65,10 @@ uv run --env-file .env test.py
    - Отправляет mp3 файл с историей разговора
    - Проверяет получение всех типов ответов
    - Требует наличие файла `serial.mp3`
+
+8. **test_08_available_models_text2text_without_auth** - проверка авторизации
+   - Вызывает RPC метод `AvailableModelsText2Text()` без секретного ключа
+   - AvailableModelsText2Text ДОЛЖЕН ОТКЛОНИТЬ запрос БЕЗ авторизации
 
 ### Добавление в качестве сервиса и запуск
 
