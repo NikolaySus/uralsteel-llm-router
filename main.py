@@ -136,7 +136,7 @@ def available_models(base_url: str, api_key: str, project: str):
 
 
 def transcribe_audio(audio_buffer: BytesIO,
-                            speech2text_override: str = None):
+                     speech2text_override: str = None):
     """Транскрибирует собранный audio_buffer и возвращает кортеж
     (transcription_text, TranscribeResponseType proto).
 
@@ -212,7 +212,7 @@ def build_messages_from_history(history, user_message: str,
     return messages
 
 
-def responses_from_llm_chunk(chunk, duration=None):
+def responses_from_llm_chunk(chunk, duration):
     """Преобразует один элемент потока ответа LLM в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     """
