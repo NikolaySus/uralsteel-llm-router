@@ -177,7 +177,7 @@ def process_llm_responses(responses):
         elif response.HasField("tool_metadata"):
             tool_meta = response.tool_metadata
             content = json.loads(tool_meta.content)
-            items = content.items()
+            items = list(content.items())
             if items[0][0] == "url_list":
                 print(f"ToolMetadata: {items[0][1]}", flush=True)
             elif items[0][0] == "image_base64":
@@ -564,6 +564,50 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with websearch failed: {e}")
+
+    def test_11_new_message_text_with_image_gen(self):
+        """Тест 11: NewMessage с текстовым сообщением и function=image_gen -
+           требует авторизацию."""
+        print(f"\nСообщение: {TEST_MESSAGE_IMAGE_GEN}")
+        print("Функция: image_gen")
+
+        stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
+
+        def request_generator():
+            yield llm_pb2.NewMessageRequest(
+                msg=TEST_MESSAGE_IMAGE_GEN,
+                function="image_gen"
+            )
+
+        try:
+            # Передаём авторизационный заголовок
+            responses = stub.NewMessage(request_generator(),
+                                        metadata=get_metadata())
+
+            _, has_gen, has_complete, __, content, reasoning, fc = \
+                process_llm_responses(responses)
+
+            print("\nРезультаты:")
+            print(f"  - Получены GenerateResponseType: {has_gen}")
+            print(f"  - Получены CompleteResponseType: {has_complete}")
+            if content:
+                print(f"  - Content: {content}")
+            if reasoning:
+                print(f"  - Reasoning: {reasoning}")
+            if fc:
+                print(f"  - Вызовы функций: {len(fc)}")
+                for func_id, func_info in fc.items():
+                    print(f"    * {func_info['name']} (id={func_id}): "
+                          f"status={func_info['status']}")
+
+            self.assertTrue(has_gen or has_complete,
+                            "Не получены ответы от сервера")
+            self.assertTrue(has_complete,
+                            "Не получен CompleteResponseType с статистикой")
+
+        except Exception as e:
+            print(f"✗ Тест не прошел: {e}")
+            self.fail(f"NewMessage text with image_gen failed: {e}")
 
 
 if __name__ == "__main__":
