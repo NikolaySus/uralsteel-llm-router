@@ -398,7 +398,7 @@ def responses_from_llm_chunk(chunk):
         total_tokens = getattr(usage, "total_tokens", None)
 
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
-    if (finish_reason == "stop") or (
+    if (finish_reason == "stop" and delta_content is None) or (
         total_tokens is not None and (
             prompt_tokens is not None and completion_tokens is not None)):
         return llm_pb2.NewMessageResponse(
@@ -436,10 +436,9 @@ def proc_llm_stream_responses(messages, tool_choice,
         max_tokens: Максимальное количество токенов для ответа LLM
     
     Yields:
-        Кортеж (response, has_function_calls) где:
+        Кортеж (response, item) где:
         - response: llm_pb2.NewMessageResponse или None
-        - has_function_calls: bool, True если
-          function_call_responses_from_llm_chunk вернула не None
+        - item: объект вызова функции или None
     """
     response = OpenAI(
         base_url=ALL_API_VARS["yandexai"]["base_url"],
@@ -458,11 +457,10 @@ def proc_llm_stream_responses(messages, tool_choice,
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
             resp, item = function_call_responses_from_llm_chunk(chunk)
-            has_function_calls = resp is not None
             if resp is None:
                 resp = responses_from_llm_chunk(chunk)
             if resp is not None:
-                yield (resp, has_function_calls, item)
+                yield (resp, item)
     finally:
         response.response.close()
 
@@ -585,22 +583,19 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # пользователь не отменял запрос
             if context.is_active():
                 try:
-                    # has_function_calls_all = False
                     item = None
-                    for r, has_function_calls, i in proc_llm_stream_responses(
+                    for r, i in proc_llm_stream_responses(
                         messages, function_tool, 2048, model_to_use
                     ):
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
                             break
-                        # if has_function_calls:
-                        #     has_function_calls_all = True
                         if i is not None:
                             item = i
                         yield r
                     if item is not None:
                         messages.append(item)
-                        for r, _ in proc_llm_stream_responses(
+                        for r, i in proc_llm_stream_responses(
                             messages, "none", 8192, model_to_use
                         ):
                             if context.is_active() is False:
