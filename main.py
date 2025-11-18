@@ -242,7 +242,12 @@ def websearch(query: str):
         print(results)
     except Exception as e:
         results = f"An error occurred during search request: {e}"
-    return results, {"url_list": [result["url"] for result in results]}
+    url_list = [result["url"] for result in results] if isinstance(results, list) else []
+    return results, llm_pb2.ToolMetadataResponse(
+        websearch=llm_pb2.ToolWebSearchMetadata(
+            url_list=url_list
+        )
+    )
 
 
 def image_gen(query: str):
@@ -265,8 +270,12 @@ def image_gen(query: str):
         result = "Done!"
     except Exception as e:
         result = f"An error occurred during image gen request: {e}"
-    return result, {"image_base64": image_base64,
-                    "expected_cost": ALL_API_VARS["openaiimgen"]["price_coef"]}
+    return result, llm_pb2.ToolMetadataResponse(
+        image_gen=llm_pb2.ToolImageGenMetadata(
+            image_base64=image_base64 or "",
+            expected_cost=ALL_API_VARS["openaiimgen"]["price_coef"]
+        )
+    )
 
 
 def call_function(name, args):
@@ -274,11 +283,10 @@ def call_function(name, args):
     if name == "websearch":
         result, meta = websearch(**args)
         return json.dumps(result,
-                          ensure_ascii=False), json.dumps(meta,
-                                                          ensure_ascii=False)
+                          ensure_ascii=False), meta
     elif name == "image_gen":
         result, meta = image_gen(**args)
-        return result, json.dumps(meta, ensure_ascii=False)
+        return result, meta
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
 
@@ -296,14 +304,15 @@ def build_messages_from_history(history, user_message: str,
     messages = [{
         "role": "system",
         "content": (
-            "You are helpfull and highly skilled LLM-powered "
-            "assistant that always follows best practices. "
-            f"The base LLM is {model_to_use}. Current date and time: "
-            f"{datetime.now().strftime(DATETIME_FORMAT)}. "
-            "Note that current date and time are relevant only "
-            "for last message, previous ones could be sent a long time ago. "
-            "You can use the websearch function for retrieving relevant "
-            "information. Respond in the same language as the user."
+            "### You are *helpfull* and *highly skilled* LLM-powered "
+            "assistant that always follows best practices.\n"
+            f"The base LLM is **{model_to_use}**. Current date and time: "
+            f"**{datetime.now().strftime(DATETIME_FORMAT)}**. "
+            "*Note that current date and time are relevant only for last "
+            "message, previous ones could be sent a long time ago*. "
+            "You can use the **websearch** tool for relevant information "
+            "retrieval and **image_gen** for image generation. "
+            "**Respond in the same language as the user**."
         )
     }]
     if history:
@@ -654,9 +663,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         )
                         if meta is not None:
                             yield llm_pb2.NewMessageResponse(
-                                tool_metadata=llm_pb2.ToolMetadataResponse(
-                                    content=meta
-                                )
+                                tool_metadata=meta
                             )
                         messages.append({
                             "role": "tool",

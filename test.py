@@ -176,13 +176,14 @@ def process_llm_responses(responses):
 
         elif response.HasField("tool_metadata"):
             tool_meta = response.tool_metadata
-            content = json.loads(tool_meta.content)
-            items = list(content.items())
-            if items[0][0] == "url_list":
-                print(f"ToolMetadata: {items[0][1]}", flush=True)
-            elif items[0][0] == "image_base64":
-                print(f"ToolMetadata: {items[1]}", flush=True)
-                open_image_from_base64(items[0][1])
+            if tool_meta.HasField("websearch"):
+                web_search = tool_meta.websearch
+                print(f"ToolMetadata (WebSearch): {web_search.url_list}", flush=True)
+            elif tool_meta.HasField("image_gen"):
+                image_gen = tool_meta.image_gen
+                print(f"ToolMetadata (ImageGen): cost={image_gen.expected_cost}", flush=True)
+                if image_gen.image_base64:
+                    open_image_from_base64(image_gen.image_base64)
 
     return (has_trans, has_gen, has_complete, transcription,
             "".join(content_parts), "".join(reasoning_parts),
