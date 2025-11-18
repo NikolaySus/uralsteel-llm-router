@@ -84,14 +84,14 @@ class TestLlmService(unittest.TestCase):
             )
 
             print("✓ Успешно получен список моделей")
-            print(f"Количество моделей: {len(response.models)}")
-            if response.models:
+            print(f"Количество моделей: {len(response.strings)}")
+            if response.strings:
                 print("Список моделей:")
-                for model in response.models:
+                for model in response.strings:
                     print(f"  - {model}")
 
             self.assertIsNotNone(response)
-            self.assertGreater(len(response.models), 0,
+            self.assertGreater(len(response.strings), 0,
                                "Список моделей не должен быть пустым")
 
         except Exception as e:
@@ -112,14 +112,14 @@ class TestLlmService(unittest.TestCase):
             )
 
             print("✓ Успешно получен ответ")
-            print(f"Количество моделей: {len(response.models)}")
-            if response.models:
+            print(f"Количество моделей: {len(response.strings)}")
+            if response.strings:
                 print("Список моделей:")
-                for model in response.models:
+                for model in response.strings:
                     print(f"  - {model}")
 
             self.assertIsNotNone(response)
-            self.assertGreater(len(response.models), 0,
+            self.assertGreater(len(response.strings), 0,
                                "Список Speech2Text моделей должен быть непуст")
 
         except Exception as e:
@@ -285,6 +285,8 @@ class TestLlmService(unittest.TestCase):
                     has_transcribe = True
                     trans = response.transcribe
                     transcription = trans.transcription
+                    expected_cost_usd = trans.expected_cost_usd
+                    print(f"usd cost: {expected_cost_usd}")
                     print(f"✓ Транскрипция: {transcription}")
                     if trans.duration:
                         print(f"  Длительность: {trans.duration}s")
@@ -448,6 +450,34 @@ class TestLlmService(unittest.TestCase):
                 print(f"✗ Получена неожиданная ошибка: {error_str}")
                 self.fail("AvailableModelsText2Text must return "
                           f"_InactiveRpcError, получено: {error_str}")
+
+    def test_09_available_tools(self):
+        """Тест 9: AvailableTools - требует авторизацию.
+           Получить список доступных инструментов/функций."""
+        print("")
+        try:
+            stub = llm_pb2_grpc.LlmStub(
+                grpc.secure_channel(SERVER_ADDRESS, CREDS))
+            # Передаём авторизационный заголовок
+            response = stub.AvailableTools(
+                google_dot_protobuf_dot_empty__pb2.Empty(),
+                metadata=get_metadata()
+            )
+
+            print("✓ Успешно получен список инструментов")
+            print(f"Количество инструментов: {len(response.strings)}")
+            if response.strings:
+                print("Список инструментов:")
+                for tool in response.strings:
+                    print(f"  - {tool}")
+
+            self.assertIsNotNone(response)
+            self.assertGreater(len(response.strings), 0,
+                               "Список инструментов не должен быть пустым")
+
+        except Exception as e:
+            print(f"✗ Тест не прошел: {e}")
+            self.fail(f"AvailableTools failed: {e}")
 
 
 if __name__ == "__main__":

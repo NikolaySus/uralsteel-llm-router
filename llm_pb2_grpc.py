@@ -54,12 +54,17 @@ class LlmStub(object):
         self.AvailableModelsText2Text = channel.unary_unary(
                 '/llm.Llm/AvailableModelsText2Text',
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-                response_deserializer=llm__pb2.ModelsListResponse.FromString,
+                response_deserializer=llm__pb2.StringsListResponse.FromString,
                 _registered_method=True)
         self.AvailableModelsSpeech2Text = channel.unary_unary(
                 '/llm.Llm/AvailableModelsSpeech2Text',
                 request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-                response_deserializer=llm__pb2.ModelsListResponse.FromString,
+                response_deserializer=llm__pb2.StringsListResponse.FromString,
+                _registered_method=True)
+        self.AvailableTools = channel.unary_unary(
+                '/llm.Llm/AvailableTools',
+                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                response_deserializer=llm__pb2.StringsListResponse.FromString,
                 _registered_method=True)
 
 
@@ -96,7 +101,7 @@ class LlmServicer(object):
     def AvailableModelsText2Text(self, request, context):
         """AvailableModelsText2Text - получить список доступных Text2Text моделей.
         Принимает: пустой объект (Empty)
-        Возвращает: ModelsListResponse со списком моделей
+        Возвращает: StringsListResponse со списком моделей
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -105,7 +110,16 @@ class LlmServicer(object):
     def AvailableModelsSpeech2Text(self, request, context):
         """AvailableModelsSpeech2Text - получить список доступных Speech2Text моделей.
         Принимает: пустой объект (Empty)
-        Возвращает: ModelsListResponse со списком моделей
+        Возвращает: StringsListResponse со списком моделей
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AvailableTools(self, request, context):
+        """AvailableTools - получить список доступных инструментов/функций.
+        Принимает: пустой объект (Empty)
+        Возвращает: StringsListResponse со списком названий инструментов
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -127,12 +141,17 @@ def add_LlmServicer_to_server(servicer, server):
             'AvailableModelsText2Text': grpc.unary_unary_rpc_method_handler(
                     servicer.AvailableModelsText2Text,
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-                    response_serializer=llm__pb2.ModelsListResponse.SerializeToString,
+                    response_serializer=llm__pb2.StringsListResponse.SerializeToString,
             ),
             'AvailableModelsSpeech2Text': grpc.unary_unary_rpc_method_handler(
                     servicer.AvailableModelsSpeech2Text,
                     request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
-                    response_serializer=llm__pb2.ModelsListResponse.SerializeToString,
+                    response_serializer=llm__pb2.StringsListResponse.SerializeToString,
+            ),
+            'AvailableTools': grpc.unary_unary_rpc_method_handler(
+                    servicer.AvailableTools,
+                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                    response_serializer=llm__pb2.StringsListResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -221,7 +240,7 @@ class Llm(object):
             target,
             '/llm.Llm/AvailableModelsText2Text',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            llm__pb2.ModelsListResponse.FromString,
+            llm__pb2.StringsListResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -248,7 +267,34 @@ class Llm(object):
             target,
             '/llm.Llm/AvailableModelsSpeech2Text',
             google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
-            llm__pb2.ModelsListResponse.FromString,
+            llm__pb2.StringsListResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AvailableTools(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/llm.Llm/AvailableTools',
+            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            llm__pb2.StringsListResponse.FromString,
             options,
             channel_credentials,
             insecure,

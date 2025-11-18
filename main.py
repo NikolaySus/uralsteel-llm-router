@@ -16,6 +16,7 @@ import subprocess
 from google.protobuf import empty_pb2
 import grpc
 from openai import OpenAI
+from tavily import TavilyClient
 
 import llm_pb2
 import llm_pb2_grpc
@@ -46,11 +47,54 @@ SECRET_KEY = os.environ.get('SECRET_KEY', '')
 DATETIME_FORMAT = os.environ.get('DATETIME_FORMAT', '%Y-%m-%dT%H:%M:%S')
 # Путь к конфигурационному файлу
 CONFIG_PATH = "config.json"
+# Базовый URL Tavily сервиса
+TAVILY_BASE_URL = os.environ.get('TAVILY_BASE_URL', 'http://localhost:8000')
+# Максимальное количество результатов веб-поиска
+MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '5'))
+# Инструменты для моделей с поддержкой функций
+TOOLS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "websearch",
+            "description": "Get websearch results by search query.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "image_gen",
+            "description": "Generate an image by query and get it's url.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    }
+]
+# Имена инструментов
+TOOLS_NAMES = [
+    tool["function"]["name"] for tool in TOOLS
+]
 
-
-# ============================================================================
-# АВТОРИЗАЦИЯ - Interceptor для проверки доступа
-# ============================================================================
 
 class AuthInterceptor(grpc.ServerInterceptor):
     """
@@ -145,7 +189,7 @@ def transcribe_audio(audio_buffer: BytesIO,
     Бросает ValueError, если конфигурация SPEECH2TEXT не задана.
     """
     if audio_buffer.tell() == 0:
-        return None, None, None
+        return None, None
 
     audio_buffer.seek(0)
     # Некоторым API требуется имя у файла
@@ -172,9 +216,51 @@ def transcribe_audio(audio_buffer: BytesIO,
     proto = llm_pb2.TranscribeResponseType(
         transcription=text,
         duration=duration,
+        expected_cost_usd=(duration * ALL_API_VARS["openai"]["price_coef"]
+                           if duration else 0.0),
         datetime=datetime.now().strftime(DATETIME_FORMAT)
     )
-    return text, proto, duration
+    return text, proto
+
+
+def websearch(query: str):
+    """Выполняет веб-поиск по запросу и возвращает список результатов."""
+    results = []
+    try:
+        client = TavilyClient(
+            api_key="meow",
+            api_base_url=TAVILY_BASE_URL
+        )
+        response = client.search(
+            query=query,
+            max_results=5,
+            include_raw_content=True,
+            include_images=False,
+            include_favicon=False
+        )
+        results = response["results"]
+        print(results)
+    except Exception as e:
+        results = f"An error occurred during search request: {e}"
+    return results
+
+def image_gen(query: str):
+    """Генерирует изображение по запросу и возвращает его URL."""
+    result = None
+    try:
+        raise Exception("501 Not Implemented")
+    except Exception as e:
+        result = f"An error occurred during image gen request: {e}"
+    return result
+
+
+def call_function(name, args):
+    """Вызов функции инструмента по имени с аргументами args."""
+    if name == "websearch":
+        return json.dumps(websearch(**args), ensure_ascii=False)
+    elif name == "image_gen":
+        return json.dumps(image_gen(**args), ensure_ascii=False)
+    return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
 
 def build_messages_from_history(history, user_message: str,
@@ -188,20 +274,19 @@ def build_messages_from_history(history, user_message: str,
         model_to_use = text2text_override
     else:
         model_to_use = ALL_API_VARS["yandexai"]["model"]
-    messages = [
-        {
-            "role": "system",
-            "content": (
-                "You are helpfull and highly skilled LLM-powered "
-                "assistant that always follows best practices. "
-                f"The base LLM is {model_to_use}. Current date and time: "
-                f"{datetime.now().strftime(DATETIME_FORMAT)}. "
-                "Note that current date and time are relevant only "
-                "for last message, previous ones could be sent a long "
-                "time ago. Respond in the same language as the user."
-            )
-        }
-    ]
+    messages = [{
+        "role": "system",
+        "content": (
+            "You are helpfull and highly skilled LLM-powered "
+            "assistant that always follows best practices. "
+            f"The base LLM is {model_to_use}. Current date and time: "
+            f"{datetime.now().strftime(DATETIME_FORMAT)}. "
+            "Note that current date and time are relevant only "
+            "for last message, previous ones could be sent a long time ago. "
+            "You can use the websearch function for retrieving relevant "
+            "information. Respond in the same language as the user."
+        )
+    }]
     if history:
         for message in history:
             messages.append({
@@ -212,7 +297,79 @@ def build_messages_from_history(history, user_message: str,
     return messages
 
 
-def responses_from_llm_chunk(chunk, duration):
+def function_call_responses_from_llm_chunk(chunk):
+    """Преобразует один элемент потока ответа LLM с функцией в один
+    экземпляр llm_pb2.NewMessageResponse или возвращает None.
+    
+    Обрабатывает различные response. вызова функции:
+    - .output_item.added: новый вызов функции (FunctionCallAdded)
+    - .function_call_arguments.delta: промежуточные арг-ты (FunctionCallDelta)
+    - .function_call_arguments.done: завершенные аргументы (FunctionCallDone)
+    - .output_item.done: завершение вызова функции (FunctionCallComplete)
+    """
+    if not hasattr(chunk, "type"):
+        return None
+
+    chunk_type = chunk.type
+    # Обработка события начала вызова функции
+    if chunk_type == "response.output_item.added":
+        if hasattr(chunk, "item") and hasattr(chunk.item, "type"):
+            if chunk.item.type == "function_call":
+                item = chunk.item
+                func_id = getattr(item, "id", "")
+                func_name = getattr(item, "name", "")
+                if func_id and func_name:
+                    return llm_pb2.NewMessageResponse(
+                        function_call_added=llm_pb2.FunctionCallAdded(
+                            id=func_id,
+                            name=func_name
+                        )
+                    )
+    # Обработка события промежуточных аргументов функции
+    elif chunk_type == "response.function_call_arguments.delta":
+        if hasattr(chunk, "delta") and hasattr(chunk, "item_id"):
+            delta = chunk.delta
+            func_id = chunk.item_id
+            return llm_pb2.NewMessageResponse(
+                function_call_delta=llm_pb2.FunctionCallDelta(
+                    id=func_id,
+                    content=delta
+                )
+            )
+    # Обработка события завершения аргументов функции
+    elif chunk_type == "response.function_call_arguments.done":
+        if hasattr(chunk, "arguments") and hasattr(chunk, "item_id"):
+            arguments = chunk.arguments
+            func_id = chunk.item_id
+            return llm_pb2.NewMessageResponse(
+                function_call_done=llm_pb2.FunctionCallDone(
+                    id=func_id,
+                    arguments=arguments
+                )
+            )
+    # Обработка события завершения вызова функции
+    elif chunk_type == "response.output_item.done":
+        if hasattr(chunk, "item") and hasattr(chunk.item, "type"):
+            if chunk.item.type == "function_call":
+                item = chunk.item
+                func_id = getattr(item, "id", "")
+                func_name = getattr(item, "name", "")
+                # Получаем аргументы
+                arguments = ""
+                if hasattr(item, "arguments"):
+                    arguments = item.arguments
+                if func_id and func_name:
+                    return llm_pb2.NewMessageResponse(
+                        function_call_complete=llm_pb2.FunctionCallComplete(
+                            id=func_id,
+                            name=func_name,
+                            arguments=arguments
+                        )
+                    )
+    return None
+
+
+def responses_from_llm_chunk(chunk):
     """Преобразует один элемент потока ответа LLM в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     """
@@ -249,10 +406,8 @@ def responses_from_llm_chunk(chunk, duration):
                 prompt_tokens=(prompt_tokens or 0),
                 completion_tokens=(completion_tokens or 0),
                 total_tokens=(total_tokens or 0),
-                expected_cost_usd=ALL_API_VARS["openai"]["price_coef"] *
-                                   (duration or 0) +
-                                   ALL_API_VARS["yandexai"]["price_coef"] *
-                                   (total_tokens or 0),
+                expected_cost_usd=ALL_API_VARS["yandexai"]["price_coef"] *
+                                  (total_tokens or 0),
                 datetime=datetime.now().strftime(DATETIME_FORMAT)
             )
         )
@@ -271,6 +426,47 @@ def responses_from_llm_chunk(chunk, duration):
         return None
 
 
+def proc_llm_stream_responses(messages, tool_choice,
+                                 max_tokens, model_to_use):
+    """Генератор для обработки потока ответов от LLM.
+    
+    Args:
+        messages: Сообщения для отправки в LLM
+        tool_choice: Параметр tool_choice для LLM (например, "auto")
+        max_tokens: Максимальное количество токенов для ответа LLM
+    
+    Yields:
+        Кортеж (response, has_function_calls) где:
+        - response: llm_pb2.NewMessageResponse или None
+        - has_function_calls: bool, True если
+          function_call_responses_from_llm_chunk вернула не None
+    """
+    try:
+        response = OpenAI(
+            base_url=ALL_API_VARS["yandexai"]["base_url"],
+            api_key=ALL_API_VARS["yandexai"]["key"],
+            project=ALL_API_VARS["yandexai"]["folder"],
+        ).chat.completions.create(
+            model=model_to_use,
+            messages=messages,
+            max_tokens=max_tokens,
+            temperature=0.3,
+            stream=True,
+            tool_choice=tool_choice,
+            tools=TOOLS
+        )
+        for chunk in response:
+            # Преобразуем chunk в один ответ protobuf (или None)
+            resp = function_call_responses_from_llm_chunk(chunk)
+            has_function_calls = resp is not None
+            if resp is None:
+                resp = responses_from_llm_chunk(chunk)
+            if resp is not None:
+                yield (resp, has_function_calls)
+    finally:
+        response.response.close()
+
+
 class LlmServicer(llm_pb2_grpc.LlmServicer):
     """Реализация LLM сервиса."""
 
@@ -281,27 +477,32 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
     def AvailableModelsText2Text(self, request, context):
         """Получить список доступных Text2Text моделей."""
         try:
-            return llm_pb2.ModelsListResponse(
-                models=available_models(ALL_API_VARS["yandexai"]["base_url"],
-                                        ALL_API_VARS["yandexai"]["key"],
-                                        ALL_API_VARS["yandexai"]["folder"]))
+            return llm_pb2.StringsListResponse(
+                strings=available_models(ALL_API_VARS["yandexai"]["base_url"],
+                                         ALL_API_VARS["yandexai"]["key"],
+                                         ALL_API_VARS["yandexai"]["folder"]))
         except Exception as e:
             print(f"ERROR getting text2text models: {e}")
             context.set_details(f"ERROR getting text2text models: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
-            return llm_pb2.ModelsListResponse(models=[])
+            return llm_pb2.StringsListResponse(strings=[])
 
     def AvailableModelsSpeech2Text(self, request, context):
         """Получить список доступных Speech2Text моделей."""
         try:
-            return llm_pb2.ModelsListResponse(
-                models=available_models(ALL_API_VARS["openai"]["base_url"],
-                                        ALL_API_VARS["openai"]["key"], None))
+            return llm_pb2.StringsListResponse(
+                strings=available_models(ALL_API_VARS["openai"]["base_url"],
+                                         ALL_API_VARS["openai"]["key"], None))
         except Exception as e:
             print(f"ERROR getting speech2text models: {e}")
             context.set_details(f"ERROR getting speech2text models: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
-            return llm_pb2.ModelsListResponse(models=[])
+            return llm_pb2.StringsListResponse(strings=[])
+
+    def AvailableTools(self, request, context):
+        """Получить список доступных инструментов/функций."""
+        return llm_pb2.StringsListResponse(strings=TOOLS_NAMES)
+
 
     def NewMessage(self, request_iter, context):
         """Метод для отправки сообщения языковой модели и получения ответа.
@@ -319,7 +520,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             audio_buffer = BytesIO()
             text2text_override = None
             speech2text_override = None
-            duration = None
+            function_tool = None
 
             # Собираем все данные из потока запросов
             for request in request_iter:
@@ -332,6 +533,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     text2text_override = request.text2text_model
                 if speech2text_override is None and request.speech2text_model:
                     speech2text_override = request.speech2text_model
+                if function_tool is None and request.function:
+                    function_tool = request.function
 
                 # Проверяем какой тип payload пришел
                 if request.HasField("msg"):
@@ -343,7 +546,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             # Если пришло аудио, транскрибируем его
             if audio_buffer.tell() > 0:
-                user_message, transcribe_proto, duration = transcribe_audio(
+                user_message, transcribe_proto = transcribe_audio(
                     audio_buffer,
                     speech2text_override
                 )
@@ -359,7 +562,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if history is None:
                 history = []
 
-            # Сборка контекста и отправка запроса на генерацию ответа
+            # Сборка контекста
             messages = build_messages_from_history(history, user_message,
                                                    text2text_override)
 
@@ -369,35 +572,38 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             else:
                 model_to_use = ALL_API_VARS["yandexai"]["model"]
 
+            # Определяем инструмент функции
+            if function_tool is None:
+                function_tool = "auto"
+            else:
+                function_tool = {"type": "function", "name" : function_tool}
+
             # Отправка запроса в OpenAI API на генерацию ответа, если
             # пользователь не отменял запрос
             if context.is_active():
                 try:
-                    response = OpenAI(
-                        base_url=ALL_API_VARS["yandexai"]["base_url"],
-                        api_key=ALL_API_VARS["yandexai"]["key"],
-                        project=ALL_API_VARS["yandexai"]["folder"],
-                    ).chat.completions.create(
-                        model=model_to_use,
-                        messages=messages,
-                        max_tokens=2000,
-                        temperature=0.3,
-                        stream=True
-                    )
-                    for chunk in response:
+                    has_function_calls_all = False
+                    for resp, has_function_calls in proc_llm_stream_responses(
+                        messages, function_tool, 2048, model_to_use
+                    ):
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
                             break
-                        # Преобразуем chunk в один ответ protobuf (или None)
-                        resp = responses_from_llm_chunk(chunk, duration)
-                        if resp is not None:
+                        if has_function_calls:
+                            has_function_calls_all = True
+                        yield resp
+                    if has_function_calls_all:
+                        for resp, _ in proc_llm_stream_responses(
+                            messages, "none", 8192, model_to_use
+                        ):
+                            if context.is_active() is False:
+                                print("Client cancelled, stopping stream.")
+                                break
                             yield resp
                 except Exception as e:
                     print(f"STREAM ERROR: {e}")
                     context.set_code(grpc.StatusCode.INTERNAL)
                     context.set_details(f"STREAM ERROR: {e}")
-                finally:
-                    response.response.close()
             else:
                 print("Client cancelled, stopping stream.")
         except Exception as e:
