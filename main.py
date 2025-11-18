@@ -576,7 +576,10 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if function_tool is None:
                 function_tool = "auto"
             else:
-                function_tool = {"type": "function", "name" : function_tool}
+                function_tool = {
+                    "type": "function",
+                    "function": {"name" : function_tool}
+                }
 
             # Отправка запроса в OpenAI API на генерацию ответа, если
             # пользователь не отменял запрос
