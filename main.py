@@ -242,24 +242,43 @@ def websearch(query: str):
         print(results)
     except Exception as e:
         results = f"An error occurred during search request: {e}"
-    return results
+    return results, {"url_list": [result["url"] for result in results]}
+
 
 def image_gen(query: str):
     """Генерирует изображение по запросу и возвращает его URL."""
     result = None
+    image_base64 = None
     try:
-        raise Exception("501 Not Implemented")
+        client = OpenAI(
+            api_key=ALL_API_VARS["openai"]["key"],
+            base_url=ALL_API_VARS["openai"]["base_url"],
+        )
+
+        response = client.images.generate(
+            model=ALL_API_VARS["openaiimgen"]["model"],
+            prompt=query,
+            size="1024x1024"
+        )
+
+        image_base64 = response.data[0].b64_json
+        result = "Done!"
     except Exception as e:
         result = f"An error occurred during image gen request: {e}"
-    return result
+    return result, {"image_base64": image_base64,
+                    "expected_cost": ALL_API_VARS["openaiimgen"]["price_coef"]}
 
 
 def call_function(name, args):
     """Вызов функции инструмента по имени с аргументами args."""
     if name == "websearch":
-        return json.dumps(websearch(**args), ensure_ascii=False)
+        result, meta = websearch(**args)
+        return json.dumps(result,
+                          ensure_ascii=False), json.dumps(meta,
+                                                          ensure_ascii=False)
     elif name == "image_gen":
-        return json.dumps(image_gen(**args), ensure_ascii=False)
+        result, meta = image_gen(**args)
+        return result, json.dumps(meta, ensure_ascii=False)
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
 
@@ -365,37 +384,39 @@ def function_call_responses_from_llm_chunk(chunk):
                             )
                         ), item
     # Обработка события завершения вызова функции из choices[0]
-    elif hasattr(chunk, "object") and chunk.object == "chat.completion.chunk":
-        if hasattr(chunk, "choices") and chunk.choices:
-            choice0 = chunk.choices[0]
-            delta = getattr(choice0, "delta", None)
-            if delta and hasattr(delta, "tool_calls") and delta.tool_calls:
-                for tool_call in delta.tool_calls:
-                    if hasattr(tool_call, "id") and hasattr(tool_call, "function"):
-                        func_id = tool_call.id
-                        func = tool_call.function
-                        func_name = getattr(func, "name", "")
-                        arguments = getattr(func, "arguments", "")
-                        if func_id and func_name:
-                            return llm_pb2.NewMessageResponse(
-                                function_call_complete=llm_pb2.FunctionCallComplete(
-                                    id=func_id,
-                                    name=func_name,
-                                    arguments=arguments
-                                )
-                            ), {
-                                "role": "assistant",
-                                "tool_calls": [
-                                    {
-                                    "id": f"{chunk.id}-{func_id}",
-                                    "type": "function",
-                                    "function": {
-                                        "name": func_name,
-                                        "arguments": arguments
-                                    }
-                                    }
-                                ]
-                            }
+    elif hasattr(chunk, "object") and (
+        chunk.object == "chat.completion.chunk" and
+        hasattr(chunk, "choices") and chunk.choices):
+        choice0 = chunk.choices[0]
+        delta = getattr(choice0, "delta", None)
+        if delta and hasattr(delta, "tool_calls") and delta.tool_calls:
+            for tool_call in delta.tool_calls:
+                if hasattr(tool_call, "id") and hasattr(tool_call,
+                                                        "function"):
+                    func_id = tool_call.id
+                    func = tool_call.function
+                    func_name = getattr(func, "name", "")
+                    arguments = getattr(func, "arguments", "")
+                    if func_id and func_name:
+                        return llm_pb2.NewMessageResponse(
+                            function_call_complete=llm_pb2.FunctionCallComplete(
+                                id=func_id,
+                                name=func_name,
+                                arguments=arguments
+                            )
+                        ), {
+                            "role": "assistant",
+                            "tool_calls": [
+                                {
+                                "id": f"{chunk.id}-{func_id}",
+                                "type": "function",
+                                "function": {
+                                    "name": func_name,
+                                    "arguments": arguments
+                                }
+                                }
+                            ]
+                        }
     return None, None
 
 
@@ -625,9 +646,18 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         yield r
                     if item is not None:
                         messages.append(item)
-                        function_name = item["tool_calls"][0]["function"]["name"]
-                        function_args = json.loads(item["tool_calls"][0]["function"]["arguments"])
-                        result = call_function(function_name, function_args)
+                        result, meta = call_function(
+                            item["tool_calls"][0]["function"]["name"],
+                            json.loads(
+                                item["tool_calls"][0]["function"]["arguments"]
+                            )
+                        )
+                        if meta is not None:
+                            yield llm_pb2.NewMessageResponse(
+                                tool_metadata=llm_pb2.ToolMetadataResponse(
+                                    content=meta
+                                )
+                            )
                         messages.append({
                             "role": "tool",
                             "tool_call_id": item["tool_calls"][0]["id"],

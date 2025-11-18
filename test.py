@@ -1,7 +1,10 @@
 """Интеграционные тесты для gRPC LLM сервиса с авторизацией."""
 
-import unittest
+import base64
+import json
 import os
+import tempfile
+import unittest
 
 from google.protobuf import empty_pb2 as google_dot_protobuf_dot_empty__pb2
 import grpc
@@ -18,6 +21,7 @@ SERVER_ADDRESS = os.environ.get('SERVER_ADDRESS', 'localhost:50051')
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
 TEST_MESSAGE = "Привет, как дела?"
 TEST_MESSAGE_WITH_HISTORY = "Подскажи какой сериал посмотреть интересненький."
+TEST_MESSAGE_IMAGE_GEN = "Создай изображение пейзажа с горами и озером."
 TEST_MP3_FILE = "serial.mp3"  # Путь к mp3 файлу
 
 # История для тестов с историей
@@ -41,6 +45,39 @@ CREDS = grpc.ssl_channel_credentials(root_certificates=TRUSTED_CERTS)
 # =============================================================================
 # ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ
 # =============================================================================
+
+
+def open_image_from_base64(b64string, file_extension=".png"):
+    """
+    Decodes a Base64 string, saves it as an image file, and opens it on Windows.
+
+    Args:
+        b64string (str or bytes): The Base64 encoded image data.
+        file_extension (str): The desired file extension for the image (e.g., ".png", ".jpg").
+    """
+    try:
+        # 1. Decode the Base64 string
+        # Ensure the input is bytes-like for b64decode
+        if isinstance(b64string, str):
+            decoded_bytes = base64.b64decode(b64string)
+        else:
+            decoded_bytes = base64.b64decode(b64string)
+
+        # 2. Save the bytes to a temporary file
+        # Create a temporary file to store the image
+        with tempfile.NamedTemporaryFile(delete=False, suffix=file_extension) as temp_file:
+            temp_file.write(decoded_bytes)
+            temp_file_path = temp_file.name
+
+        # 3. Open the file using the default system viewer
+        os.startfile(temp_file_path)
+        print(f"Image saved to {temp_file_path} and opened.")
+
+    except Exception as e:
+        print(f"Error opening image from Base64: {e}")
+        if 'temp_file_path' in locals() and os.path.exists(temp_file_path):
+            os.remove(temp_file_path) # Clean up temp file in case of error
+
 
 def get_metadata():
     """Возвращает metadata с авторизацией для защищённых методов."""
@@ -109,7 +146,6 @@ def process_llm_responses(responses):
                 "status": "added",
                 "arguments": ""
             }
-            # print(f"🔧 FunctionCallAdded: id={func_id}, name={func_name}")
 
         elif response.HasField("function_call_delta"):
             func_call = response.function_call_delta
@@ -118,7 +154,6 @@ def process_llm_responses(responses):
             if func_id in function_calls:
                 function_calls[func_id]["arguments"] += content
                 function_calls[func_id]["status"] = "delta"
-                # print(f"🔧 FunctionCallDelta: id={func_id}, content={content}")
 
         elif response.HasField("function_call_done"):
             func_call = response.function_call_done
@@ -127,8 +162,6 @@ def process_llm_responses(responses):
             if func_id in function_calls:
                 function_calls[func_id]["arguments"] = arguments
                 function_calls[func_id]["status"] = "done"
-                # print(f"🔧 FunctionCallDone: id={func_id}, "
-                #       f"arguments={arguments}")
 
         elif response.HasField("function_call_complete"):
             func_call = response.function_call_complete
@@ -140,8 +173,16 @@ def process_llm_responses(responses):
                 "status": "complete",
                 "arguments": arguments
             }
-            # print(f"🔧 FunctionCallComplete: id={func_id}, name={func_name}, "
-            #       f"arguments={arguments}")
+
+        elif response.HasField("tool_metadata"):
+            tool_meta = response.tool_metadata
+            content = json.loads(tool_meta.content)
+            items = content.items()
+            if items[0][0] == "url_list":
+                print(f"ToolMetadata: {items[0][1]}", flush=True)
+            elif items[0][0] == "image_base64":
+                print(f"ToolMetadata: {items[1]}", flush=True)
+                open_image_from_base64(items[0][1])
 
     return (has_trans, has_gen, has_complete, transcription,
             "".join(content_parts), "".join(reasoning_parts),

@@ -57,6 +57,7 @@ SYSTEM_MESSAGE = {
         "$0.0004 / 1M*unit\n"
         "$0.000123123 / 1k*unit\n"
         "$0.000001212121 / unit\n"
+        "$0.042 / image\n"
     )
 }
 
@@ -191,6 +192,8 @@ def get_coef(api_vars) -> float:
             elif denominator == '1k*unit':
                 denominator = 1000
             elif denominator == 'unit':
+                denominator = 1
+            elif denominator == 'image':
                 denominator = 1
             result_coef = numerator / denominator
             return result_coef
