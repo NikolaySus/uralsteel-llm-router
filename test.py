@@ -490,7 +490,7 @@ class TestLlmService(unittest.TestCase):
 
         def request_generator():
             yield llm_pb2.NewMessageRequest(
-                msg=TEST_MESSAGE,
+                msg=TEST_MESSAGE_WITH_HISTORY,
                 function="websearch"
             )
 
