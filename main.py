@@ -427,7 +427,7 @@ def responses_from_llm_chunk(chunk):
 
 
 def proc_llm_stream_responses(messages, tool_choice,
-                                 max_tokens, model_to_use):
+                              max_tokens, model_to_use):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
@@ -441,20 +441,20 @@ def proc_llm_stream_responses(messages, tool_choice,
         - has_function_calls: bool, True если
           function_call_responses_from_llm_chunk вернула не None
     """
+    response = OpenAI(
+        base_url=ALL_API_VARS["yandexai"]["base_url"],
+        api_key=ALL_API_VARS["yandexai"]["key"],
+        project=ALL_API_VARS["yandexai"]["folder"],
+    ).chat.completions.create(
+        model=model_to_use,
+        messages=messages,
+        max_tokens=max_tokens,
+        temperature=0.3,
+        stream=True,
+        tool_choice=tool_choice,
+        tools=TOOLS
+    )
     try:
-        response = OpenAI(
-            base_url=ALL_API_VARS["yandexai"]["base_url"],
-            api_key=ALL_API_VARS["yandexai"]["key"],
-            project=ALL_API_VARS["yandexai"]["folder"],
-        ).chat.completions.create(
-            model=model_to_use,
-            messages=messages,
-            max_tokens=max_tokens,
-            temperature=0.3,
-            stream=True,
-            tool_choice=tool_choice,
-            tools=TOOLS
-        )
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
             resp = function_call_responses_from_llm_chunk(chunk)

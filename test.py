@@ -49,6 +49,105 @@ def get_metadata():
     return []
 
 
+def process_llm_responses(responses):
+    """Обрабатывает поток ответов от LLM и возвращает результаты.
+    
+    Args:
+        responses: Поток ответов от LLM (iterator NewMessageResponse)
+    
+    Returns:
+        Кортеж (has_trans, has_gen, has_complete, 
+                transcription, content, reasoning,
+                function_calls_info)
+                где function_calls_info это словарь словарей с информацией 
+                о вызовах функций
+    """
+    has_trans = False
+    has_gen = False
+    has_complete = False
+    transcription = ""
+    content_parts = []
+    reasoning_parts = []
+    function_calls = {}  # {id: {"name": str, "status": str, "arguments": str}}
+
+    for response in responses:
+        if response.HasField("transcribe"):
+            has_trans = True
+            trans = response.transcribe
+            transcription = trans.transcription
+            expected_cost_usd = trans.expected_cost_usd
+            print(f"usd cost: {expected_cost_usd}")
+            print(f"✓ Транскрипция: {transcription}")
+            if trans.duration:
+                print(f"  Длительность: {trans.duration}s")
+
+        elif response.HasField("generate"):
+            has_gen = True
+            gen = response.generate
+            if gen.content:
+                content_parts.append(gen.content)
+                print(f"Content: {gen.content}", flush=True)
+            if gen.reasoning_content:
+                reasoning_parts.append(gen.reasoning_content)
+                print(f"Reasoning: {gen.reasoning_content}", flush=True)
+
+        elif response.HasField("complete"):
+            has_complete = True
+            comp = response.complete
+            print("\n✓ Завершено. Токены: "
+                  f"prompt={comp.prompt_tokens}, "
+                  f"completion={comp.completion_tokens}, "
+                  f"total={comp.total_tokens}, "
+                  f"expected_cost_usd={comp.expected_cost_usd}")
+
+        elif response.HasField("function_call_added"):
+            func_call = response.function_call_added
+            func_id = func_call.id
+            func_name = func_call.name
+            function_calls[func_id] = {
+                "name": func_name,
+                "status": "added",
+                "arguments": ""
+            }
+            # print(f"🔧 FunctionCallAdded: id={func_id}, name={func_name}")
+
+        elif response.HasField("function_call_delta"):
+            func_call = response.function_call_delta
+            func_id = func_call.id
+            content = func_call.content
+            if func_id in function_calls:
+                function_calls[func_id]["arguments"] += content
+                function_calls[func_id]["status"] = "delta"
+                # print(f"🔧 FunctionCallDelta: id={func_id}, content={content}")
+
+        elif response.HasField("function_call_done"):
+            func_call = response.function_call_done
+            func_id = func_call.id
+            arguments = func_call.arguments
+            if func_id in function_calls:
+                function_calls[func_id]["arguments"] = arguments
+                function_calls[func_id]["status"] = "done"
+                # print(f"🔧 FunctionCallDone: id={func_id}, "
+                #       f"arguments={arguments}")
+
+        elif response.HasField("function_call_complete"):
+            func_call = response.function_call_complete
+            func_id = func_call.id
+            func_name = func_call.name
+            arguments = func_call.arguments
+            function_calls[func_id] = {
+                "name": func_name,
+                "status": "complete",
+                "arguments": arguments
+            }
+            # print(f"🔧 FunctionCallComplete: id={func_id}, name={func_name}, "
+            #       f"arguments={arguments}")
+
+    return (has_trans, has_gen, has_complete, transcription,
+            "".join(content_parts), "".join(reasoning_parts),
+            function_calls)
+
+
 # =============================================================================
 # ТЕСТЫ
 # =============================================================================
@@ -141,42 +240,23 @@ class TestLlmService(unittest.TestCase):
             responses = stub.NewMessage(request_generator(),
                                         metadata=get_metadata())
 
-            has_generate = False
-            has_complete = False
-            content_parts = []
-            reasoning_parts = []
-
-            for response in responses:
-                if response.HasField("generate"):
-                    has_generate = True
-                    gen = response.generate
-                    if gen.content:
-                        content_parts.append(gen.content)
-                        print(f"Content: {gen.content}", flush=True)
-                    if gen.reasoning_content:
-                        reasoning_parts.append(gen.reasoning_content)
-                        print(f"Reasoning: {gen.reasoning_content}",
-                              flush=True)
-
-                elif response.HasField("complete"):
-                    has_complete = True
-                    comp = response.complete
-                    print("\n✓ Завершено. Токены: "
-                          f"prompt={comp.prompt_tokens}, "
-                          f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}, "
-                          f"expected_cost_usd={comp.expected_cost_usd}")
-
+            _, has_gen, has_complete, __, content, reasoning, fc = \
+                process_llm_responses(responses)
 
             print("\nРезультаты:")
-            print(f"  - Получены GenerateResponseType: {has_generate}")
+            print(f"  - Получены GenerateResponseType: {has_gen}")
             print(f"  - Получены CompleteResponseType: {has_complete}")
-            if content_parts:
-                print(f"  - Content: {''.join(content_parts)}")
-            if reasoning_parts:
-                print(f"  - Reasoning: {''.join(reasoning_parts)}")
+            if content:
+                print(f"  - Content: {content}")
+            if reasoning:
+                print(f"  - Reasoning: {reasoning}")
+            if fc:
+                print(f"  - Вызовы функций: {len(fc)}")
+                for func_id, func_info in fc.items():
+                    print(f"    * {func_info['name']} (id={func_id}): "
+                          f"status={func_info['status']}")
 
-            self.assertTrue(has_generate or has_complete,
+            self.assertTrue(has_gen or has_complete,
                             "Не получены ответы от сервера")
             self.assertTrue(has_complete,
                             "Не получен CompleteResponseType с статистикой")
@@ -204,42 +284,23 @@ class TestLlmService(unittest.TestCase):
             responses = stub.NewMessage(request_generator(),
                                         metadata=get_metadata())
 
-            has_generate = False
-            has_complete = False
-            content_parts = []
-            reasoning_parts = []
-
-            for response in responses:
-                if response.HasField("generate"):
-                    has_generate = True
-                    gen = response.generate
-                    if gen.content:
-                        content_parts.append(gen.content)
-                        print(f"Content: {gen.content}", flush=True)
-                    if gen.reasoning_content:
-                        reasoning_parts.append(gen.reasoning_content)
-                        print(f"Reasoning: {gen.reasoning_content}",
-                              flush=True)
-
-                elif response.HasField("complete"):
-                    has_complete = True
-                    comp = response.complete
-                    print("\n✓ Завершено. Токены: "
-                          f"prompt={comp.prompt_tokens}, "
-                          f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}, "
-                          f"expected_cost_usd={comp.expected_cost_usd}")
-
+            _, has_gen, has_complete, __, content, reasoning, fc = \
+                process_llm_responses(responses)
 
             print("\nРезультаты:")
-            print(f"  - Получены GenerateResponseType: {has_generate}")
+            print(f"  - Получены GenerateResponseType: {has_gen}")
             print(f"  - Получены CompleteResponseType: {has_complete}")
-            if content_parts:
-                print(f"  - Content: {''.join(content_parts)}")
-            if reasoning_parts:
-                print(f"  - Reasoning: {''.join(reasoning_parts)}")
+            if content:
+                print(f"  - Content: {content}")
+            if reasoning:
+                print(f"  - Reasoning: {reasoning}")
+            if fc:
+                print(f"  - Вызовы функций: {len(fc)}")
+                for func_id, func_info in fc.items():
+                    print(f"    * {func_info['name']} (id={func_id}): "
+                          f"status={func_info['status']}")
 
-            self.assertTrue(has_generate or has_complete,
+            self.assertTrue(has_gen or has_complete,
                             "Не получены ответы от сервера")
             self.assertTrue(has_complete,
                             "Не получен CompleteResponseType с статистикой")
@@ -273,57 +334,26 @@ class TestLlmService(unittest.TestCase):
             responses = stub.NewMessage(request_generator(),
                                         metadata=get_metadata())
 
-            has_transcribe = False
-            has_generate = False
-            has_complete = False
-            transcription = ""
-            content_parts = []
-            reasoning_parts = []
-
-            for response in responses:
-                if response.HasField("transcribe"):
-                    has_transcribe = True
-                    trans = response.transcribe
-                    transcription = trans.transcription
-                    expected_cost_usd = trans.expected_cost_usd
-                    print(f"usd cost: {expected_cost_usd}")
-                    print(f"✓ Транскрипция: {transcription}")
-                    if trans.duration:
-                        print(f"  Длительность: {trans.duration}s")
-
-                elif response.HasField("generate"):
-                    has_generate = True
-                    gen = response.generate
-                    if gen.content:
-                        content_parts.append(gen.content)
-                        print(f"Content: {gen.content}", flush=True)
-                    if gen.reasoning_content:
-                        reasoning_parts.append(gen.reasoning_content)
-                        print(f"Reasoning: {gen.reasoning_content}",
-                              flush=True)
-
-                elif response.HasField("complete"):
-                    has_complete = True
-                    comp = response.complete
-                    print("\n✓ Завершено. Токены: "
-                          f"prompt={comp.prompt_tokens}, "
-                          f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}, "
-                          f"expected_cost_usd={comp.expected_cost_usd}")
-
+            has_trans, has_gen, has_complete, trans, content, reasoning, fc = \
+                process_llm_responses(responses)
 
             print("\nРезультаты:")
-            print(f"  - Получены TranscribeResponseType: {has_transcribe}")
-            print(f"  - Получены GenerateResponseType: {has_generate}")
+            print(f"  - Получены TranscribeResponseType: {has_trans}")
+            print(f"  - Получены GenerateResponseType: {has_gen}")
             print(f"  - Получены CompleteResponseType: {has_complete}")
-            if transcription:
-                print(f"  - Транскрипция: {transcription}")
-            if content_parts:
-                print(f"  - Content: {''.join(content_parts)}")
-            if reasoning_parts:
-                print(f"  - Reasoning: {''.join(reasoning_parts)}")
+            if trans:
+                print(f"  - Транскрипция: {trans}")
+            if content:
+                print(f"  - Content: {content}")
+            if reasoning:
+                print(f"  - Reasoning: {reasoning}")
+            if fc:
+                print(f"  - Вызовы функций: {len(fc)}")
+                for func_id, func_info in fc.items():
+                    print(f"    * {func_info['name']} (id={func_id}): "
+                          f"status={func_info['status']}")
 
-            self.assertTrue(has_transcribe or has_generate or has_complete,
+            self.assertTrue(has_trans or has_gen or has_complete,
                             "Не получены ответы от сервера")
 
         except Exception as e:
@@ -364,55 +394,26 @@ class TestLlmService(unittest.TestCase):
             responses = stub.NewMessage(request_generator(),
                                         metadata=get_metadata())
 
-            has_transcribe = False
-            has_generate = False
-            has_complete = False
-            transcription = ""
-            content_parts = []
-            reasoning_parts = []
-
-            for response in responses:
-                if response.HasField("transcribe"):
-                    has_transcribe = True
-                    trans = response.transcribe
-                    transcription = trans.transcription
-                    print(f"✓ Транскрипция: {transcription}")
-                    if trans.duration:
-                        print(f"  Длительность: {trans.duration}s")
-
-                elif response.HasField("generate"):
-                    has_generate = True
-                    gen = response.generate
-                    if gen.content:
-                        content_parts.append(gen.content)
-                        print(f"Content: {gen.content}", flush=True)
-                    if gen.reasoning_content:
-                        reasoning_parts.append(gen.reasoning_content)
-                        print(f"Reasoning: {gen.reasoning_content}",
-                              flush=True)
-
-                elif response.HasField("complete"):
-                    has_complete = True
-                    comp = response.complete
-                    print("\n✓ Завершено. Токены: "
-                          f"prompt={comp.prompt_tokens}, "
-                          f"completion={comp.completion_tokens}, "
-                          f"total={comp.total_tokens}, "
-                          f"expected_cost_usd={comp.expected_cost_usd}")
-
+            has_trans, has_gen, has_complete, trans, content, reasoning, fc = \
+                process_llm_responses(responses)
 
             print("\nРезультаты:")
-            print(f"  - Получены TranscribeResponseType: {has_transcribe}")
-            print(f"  - Получены GenerateResponseType: {has_generate}")
+            print(f"  - Получены TranscribeResponseType: {has_trans}")
+            print(f"  - Получены GenerateResponseType: {has_gen}")
             print(f"  - Получены CompleteResponseType: {has_complete}")
-            if transcription:
-                print(f"  - Транскрипция: {transcription}")
-            if content_parts:
-                print(f"  - Content: {''.join(content_parts)}")
-            if reasoning_parts:
-                print(f"  - Reasoning: {''.join(reasoning_parts)}")
+            if trans:
+                print(f"  - Транскрипция: {trans}")
+            if content:
+                print(f"  - Content: {content}")
+            if reasoning:
+                print(f"  - Reasoning: {reasoning}")
+            if fc:
+                print(f"  - Вызовы функций: {len(fc)}")
+                for func_id, func_info in fc.items():
+                    print(f"    * {func_info['name']} (id={func_id}): "
+                          f"status={func_info['status']}")
 
-            self.assertTrue(has_transcribe or has_generate or has_complete,
+            self.assertTrue(has_trans or has_gen or has_complete,
                             "Не получены ответы от сервера")
 
         except Exception as e:
@@ -478,6 +479,50 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"AvailableTools failed: {e}")
+
+    def test_10_new_message_text_with_websearch(self):
+        """Тест 10: NewMessage с текстовым сообщением и function=websearch -
+           требует авторизацию."""
+        print(f"\nСообщение: {TEST_MESSAGE_WITH_HISTORY}")
+        print("Функция: websearch")
+
+        stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
+
+        def request_generator():
+            yield llm_pb2.NewMessageRequest(
+                msg=TEST_MESSAGE,
+                function="websearch"
+            )
+
+        try:
+            # Передаём авторизационный заголовок
+            responses = stub.NewMessage(request_generator(),
+                                        metadata=get_metadata())
+
+            _, has_gen, has_complete, __, content, reasoning, fc = \
+                process_llm_responses(responses)
+
+            print("\nРезультаты:")
+            print(f"  - Получены GenerateResponseType: {has_gen}")
+            print(f"  - Получены CompleteResponseType: {has_complete}")
+            if content:
+                print(f"  - Content: {content}")
+            if reasoning:
+                print(f"  - Reasoning: {reasoning}")
+            if fc:
+                print(f"  - Вызовы функций: {len(fc)}")
+                for func_id, func_info in fc.items():
+                    print(f"    * {func_info['name']} (id={func_id}): "
+                          f"status={func_info['status']}")
+
+            self.assertTrue(has_gen or has_complete,
+                            "Не получены ответы от сервера")
+            self.assertTrue(has_complete,
+                            "Не получен CompleteResponseType с статистикой")
+
+        except Exception as e:
+            print(f"✗ Тест не прошел: {e}")
+            self.fail(f"NewMessage text with websearch failed: {e}")
 
 
 if __name__ == "__main__":
