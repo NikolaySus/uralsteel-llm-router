@@ -60,6 +60,8 @@ SYSTEM_MESSAGE = {
         "$0.042 / image\n"
     )
 }
+# Кэшированные страницы
+CACHED_PAGES = dict()
 
 
 async def fetch_openai_pricing(url: str) -> str:
@@ -147,7 +149,12 @@ async def fetch_openai_pricing(url: str) -> str:
 def get_coef(api_vars) -> float:
     """Получить коэффициент цены для API."""
     query_string = api_vars["model"]
-    ok, long_string = asyncio.run(fetch_openai_pricing(api_vars["prices_url"]))
+    if api_vars["prices_url"] in CACHED_PAGES:
+        long_string = CACHED_PAGES[api_vars["prices_url"]]
+        ok = True
+    else:
+        ok, long_string = asyncio.run(fetch_openai_pricing(api_vars["prices_url"]))
+        CACHED_PAGES[api_vars["prices_url"]] = long_string
     if ok:
         messages = [
             SYSTEM_MESSAGE,
