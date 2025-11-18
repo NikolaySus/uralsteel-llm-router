@@ -72,6 +72,20 @@ uv run --env-file .env test.py
    - Вызывает RPC метод `AvailableModelsText2Text()` без секретного ключа
    - AvailableModelsText2Text ДОЛЖЕН ОТКЛОНИТЬ запрос БЕЗ авторизации
 
+9. **test_09_available_tools** - Список доступных инструментов/функций
+   - Вызывает RPC метод `AvailableTools()`
+   - Проверяет, что список инструментов не пустой
+   - Выводит все доступные инструменты
+
+10. **test_10_new_message_text_with_websearch** - NewMessage с функцией websearch
+   - Отправляет текстовое сообщение с параметром function="websearch"
+   - Проверяет получение GenerateResponseType и CompleteResponseType
+
+11. **test_11_new_message_text_with_image_gen** - NewMessage с функцией image_gen
+   - Отправляет текстовое сообщение с параметром function="image_gen"
+   - Проверяет получение GenerateResponseType и CompleteResponseType
+   - Обрабатывает ToolMetadata ответы с генерируемыми изображениями
+
 ### Добавление в качестве сервиса и запуск
 
 #### Создание systemd сервис-файла
