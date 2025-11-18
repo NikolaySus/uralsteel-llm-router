@@ -308,7 +308,7 @@ def function_call_responses_from_llm_chunk(chunk):
     - .output_item.done: завершение вызова функции (FunctionCallComplete)
     """
     if not hasattr(chunk, "type"):
-        return None
+        return None, None
 
     chunk_type = chunk.type
     # Обработка события начала вызова функции
@@ -324,7 +324,7 @@ def function_call_responses_from_llm_chunk(chunk):
                             id=func_id,
                             name=func_name
                         )
-                    )
+                    ), None
     # Обработка события промежуточных аргументов функции
     elif chunk_type == "response.function_call_arguments.delta":
         if hasattr(chunk, "delta") and hasattr(chunk, "item_id"):
@@ -335,7 +335,7 @@ def function_call_responses_from_llm_chunk(chunk):
                     id=func_id,
                     content=delta
                 )
-            )
+            ), None
     # Обработка события завершения аргументов функции
     elif chunk_type == "response.function_call_arguments.done":
         if hasattr(chunk, "arguments") and hasattr(chunk, "item_id"):
@@ -346,7 +346,7 @@ def function_call_responses_from_llm_chunk(chunk):
                     id=func_id,
                     arguments=arguments
                 )
-            )
+            ), None
     # Обработка события завершения вызова функции
     elif chunk_type == "response.output_item.done":
         if hasattr(chunk, "item") and hasattr(chunk.item, "type"):
@@ -365,8 +365,8 @@ def function_call_responses_from_llm_chunk(chunk):
                             name=func_name,
                             arguments=arguments
                         )
-                    )
-    return None
+                    ), item
+    return None, None
 
 
 def responses_from_llm_chunk(chunk):
@@ -457,12 +457,12 @@ def proc_llm_stream_responses(messages, tool_choice,
     try:
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
-            resp = function_call_responses_from_llm_chunk(chunk)
+            resp, item = function_call_responses_from_llm_chunk(chunk)
             has_function_calls = resp is not None
             if resp is None:
                 resp = responses_from_llm_chunk(chunk)
             if resp is not None:
-                yield (resp, has_function_calls)
+                yield (resp, has_function_calls, item)
     finally:
         response.response.close()
 
@@ -585,24 +585,28 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # пользователь не отменял запрос
             if context.is_active():
                 try:
-                    has_function_calls_all = False
-                    for resp, has_function_calls in proc_llm_stream_responses(
+                    # has_function_calls_all = False
+                    item = None
+                    for r, has_function_calls, i in proc_llm_stream_responses(
                         messages, function_tool, 2048, model_to_use
                     ):
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
                             break
-                        if has_function_calls:
-                            has_function_calls_all = True
-                        yield resp
-                    if has_function_calls_all:
-                        for resp, _ in proc_llm_stream_responses(
+                        # if has_function_calls:
+                        #     has_function_calls_all = True
+                        if i is not None:
+                            item = i
+                        yield r
+                    if item is not None:
+                        messages.append(item)
+                        for r, _ in proc_llm_stream_responses(
                             messages, "none", 8192, model_to_use
                         ):
                             if context.is_active() is False:
                                 print("Client cancelled, stopping stream.")
                                 break
-                            yield resp
+                            yield r
                 except Exception as e:
                     print(f"STREAM ERROR: {e}")
                     context.set_code(grpc.StatusCode.INTERNAL)
