@@ -17,6 +17,7 @@ from google.protobuf import empty_pb2
 import grpc
 from openai import OpenAI
 from tavily import TavilyClient
+import re
 
 import llm_pb2
 import llm_pb2_grpc
@@ -51,6 +52,11 @@ CONFIG_PATH = "config.json"
 TAVILY_BASE_URL = os.environ.get('TAVILY_BASE_URL', 'http://localhost:8000')
 # Максимальное количество результатов веб-поиска
 MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '5'))
+# Регулярные выражения для фильтрации моделей
+WHITELIST_REGEX_TEXT2TEXT = os.environ.get('WHITELIST_REGEX_TEXT2TEXT', '.*')
+BLACKLIST_REGEX_TEXT2TEXT = os.environ.get('BLACKLIST_REGEX_TEXT2TEXT', '$^')
+WHITELIST_REGEX_SPEECH2TEXT = os.environ.get('WHITELIST_REGEX_SPEECH2TEXT', '.*')
+BLACKLIST_REGEX_SPEECH2TEXT = os.environ.get('BLACKLIST_REGEX_SPEECH2TEXT', '$^')
 # Инструменты для моделей с поддержкой функций
 TOOLS = [
     {
@@ -166,8 +172,26 @@ class AuthInterceptor(grpc.ServerInterceptor):
         return continuation(handler_call_details)
 
 
-def available_models(base_url: str, api_key: str, project: str):
-    """Возвращает список доступных моделей в виде списка строк."""
+def available_models(base_url: str,
+                     api_key: str,
+                     project: str,
+                     whitelist_regex: str = ".*",
+                     blacklist_regex: str = "$^"):
+    """Возвращает список доступных моделей в виде списка строк.
+
+    Поддерживает фильтрацию по белому и чёрному списку в виде регулярных
+    выражений. Модели, подходящие под whitelist, но при этом также попадающие
+    под blacklist, будут исключены.
+
+    Параметры по умолчанию сохраняют прежнее поведение:
+    - `whitelist_regex='.*'` — всё разрешено
+    - `blacklist_regex='$^'` — ничего не запрещено
+    """
+    try:
+        wl = re.compile(whitelist_regex)
+        bl = re.compile(blacklist_regex)
+    except re.error as e:
+        raise ValueError(f"Invalid regex provided: {e}") from e
     models_list = OpenAI(
         base_url=base_url,
         api_key=api_key,
@@ -175,7 +199,11 @@ def available_models(base_url: str, api_key: str, project: str):
     ).models.list()
     check_arr = []
     for model in models_list.data:
-        check_arr.append(model.id)
+        model_id = getattr(model, "id", "")
+        if not model_id:
+            continue
+        if wl.search(model_id) and not bl.search(model_id):
+            check_arr.append(model_id)
     return check_arr
 
 
@@ -312,7 +340,8 @@ def build_messages_from_history(history, user_message: str,
             "message, previous ones could be sent a long time ago*. "
             "You can use the **websearch** tool for relevant information "
             "retrieval and **image_gen** for image generation. "
-            "**Respond in the same language as the user**."
+            "**Do not insert any links or images in your answers. Respond in "
+            "the same language as the user using MarkDown markup language**."
         )
     }]
     if history:
@@ -538,7 +567,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             return llm_pb2.StringsListResponse(
                 strings=available_models(ALL_API_VARS["yandexai"]["base_url"],
                                          ALL_API_VARS["yandexai"]["key"],
-                                         ALL_API_VARS["yandexai"]["folder"]))
+                                         ALL_API_VARS["yandexai"]["folder"],
+                                         WHITELIST_REGEX_TEXT2TEXT,
+                                         BLACKLIST_REGEX_TEXT2TEXT))
         except Exception as e:
             print(f"ERROR getting text2text models: {e}")
             context.set_details(f"ERROR getting text2text models: {e}")
@@ -550,7 +581,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
         try:
             return llm_pb2.StringsListResponse(
                 strings=available_models(ALL_API_VARS["openai"]["base_url"],
-                                         ALL_API_VARS["openai"]["key"], None))
+                                         ALL_API_VARS["openai"]["key"], None,
+                                         WHITELIST_REGEX_SPEECH2TEXT,
+                                         BLACKLIST_REGEX_SPEECH2TEXT))
         except Exception as e:
             print(f"ERROR getting speech2text models: {e}")
             context.set_details(f"ERROR getting speech2text models: {e}")
@@ -758,9 +791,13 @@ if __name__ == "__main__":
     print("Checking available models...")
     check_arr = available_models(ALL_API_VARS["yandexai"]["base_url"],
                                  ALL_API_VARS["yandexai"]["key"],
-                                 ALL_API_VARS["yandexai"]["folder"])
-    check_arr_speech = available_models(ALL_API_VARS["openai"]["base_url"],
-                                        ALL_API_VARS["openai"]["key"], None)
+                                 ALL_API_VARS["yandexai"]["folder"],
+                                 WHITELIST_REGEX_TEXT2TEXT,
+                                 BLACKLIST_REGEX_TEXT2TEXT)
+    check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
+                                      ALL_API_VARS["openai"]["key"], None,
+                                      WHITELIST_REGEX_SPEECH2TEXT,
+                                      BLACKLIST_REGEX_SPEECH2TEXT)
     if ALL_API_VARS["yandexai"]["model"] not in check_arr:
         print(f"ERROR: Text2Text model {ALL_API_VARS["yandexai"]["model"]} "
               "not found in available models!")

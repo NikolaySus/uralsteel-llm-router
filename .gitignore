@@ -216,9 +216,6 @@ server.crt
 server.csr
 server.key
 
-# logs
-nohup.out
-
 # tmp files
 *.tmp
 config.json
