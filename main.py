@@ -52,11 +52,13 @@ CONFIG_PATH = "config.json"
 TAVILY_BASE_URL = os.environ.get('TAVILY_BASE_URL', 'http://localhost:8000')
 # Максимальное количество результатов веб-поиска
 MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '5'))
+# Когда генерировать конфигурационный файл (ресурсоёмкая операция)
+GENERATE_CONFIG_WHEN = os.environ.get('GENERATE_CONFIG_WHEN', 'missing')
 # Регулярные выражения для фильтрации моделей
-WHITELIST_REGEX_TEXT2TEXT = os.environ.get('WHITELIST_REGEX_TEXT2TEXT', '.*')
-BLACKLIST_REGEX_TEXT2TEXT = os.environ.get('BLACKLIST_REGEX_TEXT2TEXT', '$^')
-WHITELIST_REGEX_SPEECH2TEXT = os.environ.get('WHITELIST_REGEX_SPEECH2TEXT', '.*')
-BLACKLIST_REGEX_SPEECH2TEXT = os.environ.get('BLACKLIST_REGEX_SPEECH2TEXT', '$^')
+WHITELIST_REGEX_TEXT2TEXT  = os.environ.get('WHITELIST_REGEX_TEXT2TEXT', '.*')
+BLACKLIST_REGEX_TEXT2TEXT  = os.environ.get('BLACKLIST_REGEX_TEXT2TEXT', '$^')
+WHITELIST_REGEX_SPEECH2TEXT= os.environ.get('WHITELIST_REGEX_SPEECH2TEXT', '.*')
+BLACKLIST_REGEX_SPEECH2TEXT= os.environ.get('BLACKLIST_REGEX_SPEECH2TEXT', '$^')
 # Инструменты для моделей с поддержкой функций
 TOOLS = [
     {
@@ -270,7 +272,9 @@ def websearch(query: str):
         print(results)
     except Exception as e:
         results = f"An error occurred during search request: {e}"
-    url_list = [result["url"] for result in results] if isinstance(results, list) else []
+    url_list = [result["url"]
+                for result
+                in results] if isinstance(results, list) else []
     return results, llm_pb2.ToolMetadataResponse(
         websearch=llm_pb2.ToolWebSearchMetadata(
             url_list=url_list
@@ -768,20 +772,25 @@ if __name__ == "__main__":
     assert ALL_API_VARS["openai"]["key"], "openai api key is n/a"
     assert ALL_API_VARS["openai"]["model"], "openai model is n/a"
     # Скрэппинг цен (prepare.py)
-    try:
-        subprocess.run(
-            ["/root/.local/bin/uv", "run", "--env-file", ".env", "prepare.py"],
-            check=True
-        )
-        with open(CONFIG_PATH) as f:
-            config = json.load(f)
-            print(f"Config generated at: {config.get('generated_at', 'n/a')}")
-            for name, coef in config.get("prices_coefs", {}).items():
-                ALL_API_VARS[name]["price_coef"] = coef
-                print(f"Price coef for {name}: {coef}")
-    except Exception as e:
-        print(f"ERROR: config gen fail: {e}")
-        exit(1)
+    if GENERATE_CONFIG_WHEN == "always" or (
+        GENERATE_CONFIG_WHEN == "missing" and not os.path.exists(CONFIG_PATH)):
+        print("Generating config...")
+        try:
+            subprocess.run(
+                ["/root/.local/bin/uv", "run",
+                 "--env-file", ".env", "prepare.py"],
+                check=True
+            )
+            with open(CONFIG_PATH) as f:
+                config = json.load(f)
+                print(f"Config generated at: {config.get(
+                    'generated_at', 'n/a')}")
+                for name, coef in config.get("prices_coefs", {}).items():
+                    ALL_API_VARS[name]["price_coef"] = coef
+                    print(f"Price coef for {name}: {coef}")
+        except Exception as e:
+            print(f"ERROR: config gen fail: {e}")
+            exit(1)
     # Информация о безопасности
     if SECRET_KEY:
         print("Authorization ENABLED")
