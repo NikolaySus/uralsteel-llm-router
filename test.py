@@ -225,7 +225,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Ping не прошел: {e}")
             self.fail(f"Ping failed: {e}")
-'''
+
     def test_02_available_models_text2text(self):
         """Тест 2: AvailableModelsText2Text - требует авторизацию.
            Получить список доступных Text2Text моделей."""
@@ -704,7 +704,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage with docs and images failed: {e}")
-'''
+
 
 if __name__ == "__main__":
     # Информация о конфигурации

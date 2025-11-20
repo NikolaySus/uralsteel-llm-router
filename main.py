@@ -498,9 +498,11 @@ def generate_chat_name(user_message: str):
             temperature=0.9
         )
         name = response.choices[0].message.content.strip()
-        prompt_tokens = response.usage.prompt_tokens
-        completion_tokens = response.usage.completion_tokens
-        total_tokens = response.usage.total_tokens
+        if not hasattr(response, "usage"):
+            raise ValueError("usage required")
+        prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
+        completion_tokens = getattr(response.usage, "completion_tokens", 0)
+        total_tokens = getattr(response.usage, "total_tokens", 0)
         usd = ALL_API_VARS["yandexaisummary"]["price_coef"] * total_tokens
         return llm_pb2.ChatNameResponseType(name=name,
                                             prompt_tokens=prompt_tokens,
