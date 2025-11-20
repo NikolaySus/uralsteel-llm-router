@@ -876,8 +876,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 history = []
 
             # Если это новый чат (история пуста), генерируем название
-            if not history:
-                yield generate_chat_name(user_message)
+            #if not history:
+            #    yield generate_chat_name(user_message)
 
             # Обработка документов
             md_docs = dict()
