@@ -212,12 +212,17 @@ def get_coef(api_vars) -> float:
 
 
 if __name__ == "__main__":
-    config = {
-        "prices_coefs": {
-            name: get_coef(value) for name, value in ALL_API_VARS.items()
-        },
-        "generated_at": datetime.now().strftime(DATETIME_FORMAT),
-    }
+    try:
+        config = {
+            "prices_coefs": {
+                name: get_coef(value) for name, value in ALL_API_VARS.items()
+            },
+            "generated_at": datetime.now().strftime(DATETIME_FORMAT),
+        }
+    except Exception as e:
+        with open("error.txt", "w", encoding="utf-8") as f:
+            f.write(str(e))
+        raise e
 
     with open("config.json", "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
