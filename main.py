@@ -783,7 +783,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                          ALL_API_VARS["yandexai"]["key"],
                                          ALL_API_VARS["yandexai"]["folder"],
                                          WHITELIST_REGEX_TEXT2TEXT,
-                                         BLACKLIST_REGEX_TEXT2TEXT))
+                                         BLACKLIST_REGEX_TEXT2TEXT).append(
+                                         ALL_API_VARS["openaivlm"]["model"]))
         except Exception as e:
             print(f"ERROR getting text2text models: {e}")
             context.set_details(f"ERROR getting text2text models: {e}")
@@ -1055,6 +1056,8 @@ if __name__ == "__main__":
             )
             with open(CONFIG_PATH) as f:
                 config = json.load(f)
+                if not config:
+                    raise ValueError("Empty config!")
                 print(f"Config generated at: {config.get(
                     'generated_at', 'n/a')}")
                 for name, coef in config.get("prices_coefs", {}).items():
@@ -1074,7 +1077,8 @@ if __name__ == "__main__":
                                  ALL_API_VARS["yandexai"]["key"],
                                  ALL_API_VARS["yandexai"]["folder"],
                                  WHITELIST_REGEX_TEXT2TEXT,
-                                 BLACKLIST_REGEX_TEXT2TEXT)
+                                 BLACKLIST_REGEX_TEXT2TEXT).append(
+                                 ALL_API_VARS["openaivlm"]["model"])
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,

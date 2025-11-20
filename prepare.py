@@ -212,6 +212,7 @@ def get_coef(api_vars) -> float:
 
 
 if __name__ == "__main__":
+    config = {}
     try:
         config = {
             "prices_coefs": {
@@ -222,7 +223,6 @@ if __name__ == "__main__":
     except Exception as e:
         with open("error.txt", "w", encoding="utf-8") as f:
             f.write(str(e))
-        raise e
 
     with open("config.json", "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)
