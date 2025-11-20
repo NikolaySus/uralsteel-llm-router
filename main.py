@@ -11,13 +11,15 @@ from io import BytesIO
 import json
 import logging
 import os
+import re
 import subprocess
 
+import asyncio
 from google.protobuf import empty_pb2
 import grpc
+import httpx
 from openai import OpenAI
 from tavily import TavilyClient
-import re
 
 import llm_pb2
 import llm_pb2_grpc
@@ -54,6 +56,10 @@ TAVILY_BASE_URL = os.environ.get('TAVILY_BASE_URL', 'http://localhost:8000')
 MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '5'))
 # Когда генерировать конфигурационный файл (ресурсоёмкая операция)
 GENERATE_CONFIG_WHEN = os.environ.get('GENERATE_CONFIG_WHEN', 'missing')
+# docling-serve
+DOCLING_ADDRESS = os.environ.get('DOCLING_ADDRESS', '')
+# -
+CHUNK_SIZE = int(os.environ.get('CHUNK_SIZE', 8192))
 # Регулярные выражения для фильтрации моделей
 WHITELIST_REGEX_TEXT2TEXT  = os.environ.get('WHITELIST_REGEX_TEXT2TEXT', '.*')
 BLACKLIST_REGEX_TEXT2TEXT  = os.environ.get('BLACKLIST_REGEX_TEXT2TEXT', '$^')
@@ -172,6 +178,78 @@ class AuthInterceptor(grpc.ServerInterceptor):
 
         # Секретный ключ верен - пропускаем запрос дальше
         return continuation(handler_call_details)
+
+
+def build_user_message(text_message: str, md_docs: dict, images_urls):
+    """Собирает сообщение пользователя для мультимодели в формате:
+    {
+      "role": "user",
+      "content": [
+        {"type": "input_text", "text": "..."},
+        {"type": "input_image", "image_url": "..."},
+        ...
+      ]
+    }
+
+    Правила:
+    - Если md_docs пуст и images_urls is None -> вернуть простой вариант
+      {"role": "user", "content": text_message}
+    - Если есть изображения, они добавляются в конец content как input_image
+    - Если есть md_docs: каждую md строку помещать в input_text, но если
+      встречается встроенная base64 картинка (data:image/...), то текущий
+      input_text закрывается, добавляется input_image c image_url=data:..., и
+      затем начинается новый input_text.
+    """
+    # Базовый случай без md и изображений
+    if (not md_docs) and (images_urls is None):
+        return {"role": "user", "content": text_message}
+
+    content = []
+
+    # Начальный текст пользователя как input_text, если он есть
+    if text_message:
+        content.append({"type": "input_text", "text": text_message})
+
+    # Обработка markdown документов
+    if md_docs:
+        img_pattern = re.compile(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+")
+        for filename, md in md_docs.items():
+            if not md:
+                continue
+            # Гарантируем, что у нас есть текущий блок текста
+            current_text = ""
+            last_end = 0
+            for m in img_pattern.finditer(md):
+                # Текст до изображения
+                text_before = md[last_end:m.start()]
+                if text_before:
+                    current_text += text_before
+                # Если накоплен текст — сохранить блок
+                if current_text:
+                    content.append({"type": "input_text", "text": current_text})
+                    current_text = ""
+                # Сохранить изображение отдельным блоком
+                data_url = m.group(0)
+                content.append({"type": "input_image", "image_url": data_url})
+                last_end = m.end()
+            # Хвостовой текст после последнего изображения
+            tail = md[last_end:]
+            if tail:
+                current_text += tail
+            if current_text:
+                content.append({"type": "input_text", "text": current_text})
+
+    # Добавление внешних изображений в конце
+    if images_urls:
+        for url in images_urls:
+            if url:
+                content.append({"type": "input_image", "image_url": url})
+
+    # Если в результате нет структурированного контента, откат к простому
+    if not content:
+        return {"role": "user", "content": text_message}
+
+    return {"role": "user", "content": content}
 
 
 def available_models(base_url: str,
@@ -322,6 +400,115 @@ def call_function(name, args):
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
 
+async def convert_to_md_async(url: str):
+    """Асинхронно конвертирует документ в markdown через docling API.
+    
+    Поддерживаемые форматы: docx, pptx, html, image, pdf, asciidoc, md, xlsx
+    
+    Returns:
+        Кортеж (filename, md_content) с именем файла и markdown контентом
+        или (None, None) в случае ошибки.
+    """
+    if not DOCLING_ADDRESS:
+        print("ERROR: DOCLING_ADDRESS is not set")
+        return None, None
+
+    try:
+        docling_url = f"http://{DOCLING_ADDRESS}/v1/convert/source"
+        payload = {
+            "options": {
+                "from_formats": ["docx", "pptx", "html", "image", "pdf",
+                                "asciidoc", "md", "xlsx"],
+                "to_formats": ["md"],
+                "image_export_mode": "embedded",
+                "do_ocr": False,
+                "abort_on_error": False,
+            },
+            "sources": [{
+                "kind": "http",
+                "url": url
+            }]
+        }
+        async_client = httpx.AsyncClient(timeout=60.0)
+        response = await async_client.post(docling_url, json=payload)
+        data = response.json()
+        filename = data.get("document", {}).get("filename")
+        md_content = data.get("document", {}).get("md_content")
+        return filename, md_content
+    except Exception as e:
+        print(f"ERROR converting document to md: {e}")
+        return None, None
+
+
+def convert_to_md(url: str):
+    """Синхронная обёртка для конвертации документа в markdown.
+    
+    Args:
+        url: URL документа для конвертации
+    
+    Returns:
+        Кортеж (filename, md_content) с именем файла и markdown контентом
+        или (None, None) в случае ошибки.
+    """
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        result = loop.run_until_complete(convert_to_md_async(url))
+        loop.close()
+        return result
+    except Exception as e:
+        print(f"ERROR in convert_to_md wrapper: {e}")
+        return None, None
+
+
+def generate_chat_name(user_message: str):
+    """Генерирует название чата на основе сообщения пользователя.
+    
+    Использует llm для создания короткого названия (до 1024 токенов).
+    Возвращает строку с названием чата или None в случае ошибки.
+    """
+    try:
+        messages = [
+            {
+                "role": "system",
+                "content": (
+                    "You are a helpful assistant that generates short, concise "
+                    "chat names based on the user's initial message. The name "
+                    "should be brief (4 words max), descriptive, and in the "
+                    "same language as the user message. Return only the name, "
+                    "nothing else."
+                )
+            },
+            {
+                "role": "user",
+                "content": user_message
+            }
+        ]
+        response = OpenAI(
+            base_url=ALL_API_VARS["yandexai"]["base_url"],
+            api_key=ALL_API_VARS["yandexai"]["key"],
+            project=ALL_API_VARS["yandexai"]["folder"],
+        ).chat.completions.create(
+            model=ALL_API_VARS["yandexaisummary"]["model"],
+            messages=messages,
+            max_tokens=128,
+            temperature=0.9
+        )
+        name = response.choices[0].message.content.strip()
+        prompt_tokens = response.usage.prompt_tokens
+        completion_tokens = response.usage.completion_tokens
+        total_tokens = response.usage.total_tokens
+        usd = ALL_API_VARS["yandexaisummary"]["price_coef"] * total_tokens
+        return llm_pb2.ChatNameResponseType(name=name,
+                                            prompt_tokens=prompt_tokens,
+                                            completion_tokens=completion_tokens,
+                                            total_tokens=total_tokens,
+                                            expected_cost_usd=usd)
+    except Exception as e:
+        print(f"ERROR generating chat name: {e}")
+        return None
+
+
 def build_messages_from_history(history, user_message: str,
                                 text2text_override: str = None):
     """Собирает список сообщений для LLM на основании history и user_message.
@@ -354,7 +541,7 @@ def build_messages_from_history(history, user_message: str,
                 "role": llm_pb2.Role.Name(message.role),
                 "content": message.body
             })
-    messages.append({"role": "user", "content": user_message})
+    messages.append(user_message)
     return messages
 
 
@@ -598,7 +785,6 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
         """Получить список доступных инструментов/функций."""
         return llm_pb2.StringsListResponse(strings=TOOLS_NAMES)
 
-
     def NewMessage(self, request_iter, context):
         """Метод для отправки сообщения языковой модели и получения ответа.
         
@@ -616,6 +802,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             text2text_override = None
             speech2text_override = None
             function_tool = None
+            documents_urls = None
+            images_urls = None
+            markdown_urls = None
 
             # Собираем все данные из потока запросов
             for request in request_iter:
@@ -630,6 +819,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     speech2text_override = request.speech2text_model
                 if function_tool is None and request.function:
                     function_tool = request.function
+                if documents_urls is None and request.documents_urls:
+                    documents_urls = request.documents_urls
+                if images_urls is None and request.images_urls:
+                    images_urls = request.images_urls
+                if markdown_urls is None and request.markdown_urls:
+                    markdown_urls = request.markdown_urls
 
                 # Проверяем какой тип payload пришел
                 if request.HasField("msg"):
@@ -656,6 +851,47 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # История по умолчанию пуста
             if history is None:
                 history = []
+
+            # Если это новый чат (история пуста), генерируем название
+            if not history:
+                chat_name_resp = generate_chat_name(user_message)
+                if chat_name_resp:
+                    yield chat_name_resp
+                else:
+                    raise ValueError("Ошибка генерации названия чата")
+
+            # Обработка документов
+            md_docs = dict()
+            if documents_urls is not None:
+                for url in documents_urls:
+                    filename, md_content = convert_to_md(url)
+                    if filename is None or md_content is None:
+                        raise ValueError("Ошибка парсинга файла")
+                    md_docs[filename] = md_content
+                    # Разбиваем контент на чанки размером CHUNK_SIZE
+                    for i in range(0, len(md_content), CHUNK_SIZE):
+                        chunk = md_content[i:i + CHUNK_SIZE]
+                        yield llm_pb2.NewMessageResponse(
+                            markdown_chunk=llm_pb2.MarkdownChunkResponseType(
+                                markdown_chunk=chunk,
+                                original_url=url,
+                                original_name=filename
+                            )
+                        )
+
+            # Обработка markdown URLs
+            if markdown_urls is not None:
+                for md_url_obj in markdown_urls:
+                    try:
+                        async_client = httpx.AsyncClient(timeout=60.0)
+                        response = await async_client.get(md_url_obj.url)
+                        md_content = response.text
+                        md_docs[md_url_obj.original_name] = md_content
+                    except Exception as e:
+                        print(f"ERROR downloading markdown from {md_url_obj.url}: {e}")
+
+            # Сборка user_message
+            user_message = build_user_message(user_message, md_docs, images_urls)
 
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
@@ -762,6 +998,7 @@ if __name__ == "__main__":
             else:
                 print(f"  {case_key}={case_value}")
     # Проверка конфигурации API
+    assert ALL_API_VARS["yandexaisummary"]["model"], "summary model is n/a"
     assert ALL_API_VARS["yandexai"]["prices_url"], "yandexai prices url is n/a"
     assert ALL_API_VARS["yandexai"]["base_url"], "yandexai base url is n/a"
     assert ALL_API_VARS["yandexai"]["key"], "yandexai api key is n/a"
@@ -809,6 +1046,9 @@ if __name__ == "__main__":
                                       BLACKLIST_REGEX_SPEECH2TEXT)
     if ALL_API_VARS["yandexai"]["model"] not in check_arr:
         print(f"ERROR: Text2Text model {ALL_API_VARS["yandexai"]["model"]} "
+              "not found in available models!")
+    elif ALL_API_VARS["yandexaisummary"]["model"] not in check_arr:
+        print(f"ERROR: summ model {ALL_API_VARS["yandexaisummary"]["model"]} "
               "not found in available models!")
     elif ALL_API_VARS["openai"]["model"] not in check_arr_speech:
         print(f"ERROR: Speech2Text model {ALL_API_VARS["openai"]["model"]} "

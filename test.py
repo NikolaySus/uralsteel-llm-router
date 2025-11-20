@@ -266,7 +266,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"AvailableModelsSpeech2Text failed: {e}")
-'''
+
     def test_04_new_message_text_no_history(self):
         """Тест 4: NewMessage с текстовым сообщением без истории -
            требует авторизацию."""
@@ -609,7 +609,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with image_gen failed: {e}")
-'''
+
 
 if __name__ == "__main__":
     # Информация о конфигурации
