@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import subprocess
+import urllib
 
 import asyncio
 from google.protobuf import empty_pb2
@@ -218,7 +219,7 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
             if not md:
                 continue
             # Гарантируем, что у нас есть текущий блок текста
-            current_text = ""
+            current_text = f'# FILE "{filename}" BEGIN\n'
             last_end = 0
             for m in img_pattern.finditer(md):
                 is_there_images = True
@@ -238,8 +239,8 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
             tail = md[last_end:]
             if tail:
                 current_text += tail
-            if current_text:
-                content.append({"type": "input_text", "text": current_text})
+            current_text += f'\n# FILE "{filename}" END'
+            content.append({"type": "input_text", "text": current_text})
 
     # Добавление внешних изображений в конце
     if images_urls:
@@ -434,7 +435,7 @@ async def convert_to_md_async(url: str):
         async_client = httpx.AsyncClient(timeout=60.0)
         response = await async_client.post(docling_url, json=payload)
         data = response.json()
-        filename = data.get("document", {}).get("filename")
+        filename = urllib.parse.unquote(data.get("document", {}).get("filename"))
         md_content = data.get("document", {}).get("md_content")
         return filename, md_content
     except Exception as e:
@@ -546,6 +547,26 @@ def build_messages_from_history(history, user_message: str,
     messages.append(user_message)
     return messages
 
+
+def change_model_msgs():
+    """Сообщения о необходимости смены модели."""
+    return [llm_pb2.NewMessageResponse(
+                generate=llm_pb2.GenerateResponseType(
+                    content="Ваш запрос слишком сложный для выбранной "
+                            f"модели, пожалуйста, выберите {
+                                ALL_API_VARS["openaivlm"]["model"]}",
+                    reasoning_content="",
+                    datetime=datetime.now().strftime(DATETIME_FORMAT)
+                )
+            ), llm_pb2.NewMessageResponse(
+                complete=llm_pb2.CompleteResponseType(
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                    expected_cost_usd=0,
+                    datetime=datetime.now().strftime(DATETIME_FORMAT)
+                )
+            )]
 
 def function_call_responses_from_llm_chunk(chunk):
     """Преобразует один элемент потока ответа LLM с функцией в один
@@ -885,16 +906,16 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if markdown_urls is not None:
                 for md_url_obj in markdown_urls:
                     try:
-                        async_client = httpx.AsyncClient(timeout=60.0)
-                        response = await async_client.get(md_url_obj.url)
-                        md_content = response.text
+                        with httpx.Client(timeout=60.0) as client:
+                            response = client.get(md_url_obj.url)
+                            md_content = response.text
                         md_docs[md_url_obj.original_name] = md_content
                     except Exception as e:
                         print(f"ERROR loading md from {md_url_obj.url}: {e}")
 
             # Сборка user_message
             user_message, vlm = build_user_message(user_message,
-                                                        md_docs, images_urls)
+                                                   md_docs, images_urls)
 
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
@@ -904,15 +925,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if text2text_override:
                 model_to_use = text2text_override
                 if vlm and model_to_use != ALL_API_VARS["openaivlm"]["model"]:
-                    yield llm_pb2.NewMessageResponse(
-                        generate=llm_pb2.GenerateResponseType(
-                            content="Ваш запрос слишком сложный для выбранной "
-                                    f"модели, пожалуйста, выберите {
-                                        ALL_API_VARS["openaivlm"]["model"]}",
-                            reasoning_content="",
-                            datetime=datetime.now().strftime(DATETIME_FORMAT)
-                        )
-                    )
+                    for msg in change_model_msgs():
+                        yield msg
                     return
             elif vlm:
                 model_to_use = ALL_API_VARS["openaivlm"]["model"]
@@ -1015,6 +1029,7 @@ if __name__ == "__main__":
                 print(f"  {case_key}={case_value}")
     # Проверка конфигурации API
     assert ALL_API_VARS["yandexaisummary"]["model"], "summary model is n/a"
+    assert ALL_API_VARS["yandexaisummary"]["prices_url"], "sum cost is n/a"
     assert ALL_API_VARS["yandexai"]["prices_url"], "yandexai prices url is n/a"
     assert ALL_API_VARS["yandexai"]["base_url"], "yandexai base url is n/a"
     assert ALL_API_VARS["yandexai"]["key"], "yandexai api key is n/a"
@@ -1024,6 +1039,10 @@ if __name__ == "__main__":
     assert ALL_API_VARS["openai"]["base_url"], "openai base url is n/a"
     assert ALL_API_VARS["openai"]["key"], "openai api key is n/a"
     assert ALL_API_VARS["openai"]["model"], "openai model is n/a"
+    assert ALL_API_VARS["openaiimgen"]["prices_url"], "openai prices url is n/a"
+    assert ALL_API_VARS["openaiimgen"]["model"], "openai model is n/a"
+    assert ALL_API_VARS["openaivlm"]["prices_url"], "openai prices url is n/a"
+    assert ALL_API_VARS["openaivlm"]["model"], "openai model is n/a"
     # Скрэппинг цен (prepare.py)
     if GENERATE_CONFIG_WHEN == "always" or (
         GENERATE_CONFIG_WHEN == "missing" and not os.path.exists(CONFIG_PATH)):

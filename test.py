@@ -1,7 +1,6 @@
 """Интеграционные тесты для gRPC LLM сервиса с авторизацией."""
 
 import base64
-import json
 import os
 import tempfile
 import unittest
@@ -23,6 +22,13 @@ TEST_MESSAGE = "Привет, как дела?"
 TEST_MESSAGE_WITH_HISTORY = "Подскажи какой сериал посмотреть интересненький."
 TEST_MESSAGE_IMAGE_GEN = "Создай изображение пейзажа с горами и озером."
 TEST_MP3_FILE = "serial.mp3"  # Путь к mp3 файлу
+
+TEST_IMAGE_URL = os.environ.get('TEST_IMAGE_URL', '')
+TEST_DOCX_URL = os.environ.get('TEST_DOCX_URL', '')
+OPENAIVLM_MODEL = os.environ.get('INFERENCE_API_OPENAIVLM_MODEL', '')
+TEST_MESSAGE_FILES_IMAGES = ("Напомни, пожалуйста, о чём файл и что в нём за "
+                             "схемы? И почему мой преподаватель на лекции "
+                             "показывал картинку, которую я прикрепил?")
 
 # История для тестов с историей
 TEST_HISTORY = [
@@ -173,6 +179,15 @@ def process_llm_responses(responses):
                 "status": "complete",
                 "arguments": arguments
             }
+
+        elif response.HasField("chat_name"):
+            cn = response.chat_name
+            print(
+                f"Chat name: {cn.name} (tokens: prompt={cn.prompt_tokens}, "
+                f"completion={cn.completion_tokens}, total={cn.total_tokens}, "
+                f"expected_cost_usd={cn.expected_cost_usd})",
+                flush=True
+            )
 
         elif response.HasField("tool_metadata"):
             tool_meta = response.tool_metadata
@@ -609,6 +624,86 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with image_gen failed: {e}")
+
+    def test_12_new_message_with_docs_and_images(self):
+        """Тест 12: проверяет обработку documents_urls и images_urls.
+        - Не передаёт history
+        - Устанавливает text2text_model = ALL_API_VARS["openaivlm"]["model"]
+        - Передаёт documents_urls = [TEST_DOCX_URL]
+        - Передаёт images_urls = [TEST_IMAGE_URL]
+        - Ожидает chat_name, хотя бы один markdown_chunk и хотя бы один generate
+        - Склеивает все markdown_chunk для одного original_name и сохраняет в файл original_name + '.tmp'
+        """
+        if not TEST_DOCX_URL:
+            self.skipTest("TEST_DOCX_URL is not set")
+        if not TEST_IMAGE_URL:
+            self.skipTest("TEST_IMAGE_URL is not set")
+        if not OPENAIVLM_MODEL:
+            self.skipTest("INFERENCE_API_OPENAIVLM_MODEL is not set")
+
+        print(f"\nDoc URL: {TEST_DOCX_URL}")
+        print(f"Image URL: {TEST_IMAGE_URL}")
+        print(f"VLM model override: {OPENAIVLM_MODEL}")
+
+        stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
+
+        def request_generator():
+            yield llm_pb2.NewMessageRequest(
+                msg="Проанализируй документ и учти картинку в ответе.",
+                text2text_model=OPENAIVLM_MODEL,
+                documents_urls=[TEST_DOCX_URL],
+                images_urls=[TEST_IMAGE_URL],
+            )
+
+        try:
+            responses = stub.NewMessage(request_generator(), metadata=get_metadata())
+
+            chat_name_seen = False
+            has_gen = False
+            md_chunks_by_name = {}
+
+            for response in responses:
+                if response.HasField("chat_name"):
+                    chat_name_seen = True
+                    cn = response.chat_name
+                    print(
+                        f"Chat name: {cn.name} (tokens: prompt={cn.prompt_tokens}, "
+                        f"completion={cn.completion_tokens}, total={cn.total_tokens}, "
+                        f"expected_cost_usd={cn.expected_cost_usd})",
+                        flush=True
+                    )
+                elif response.HasField("markdown_chunk"):
+                    mc = response.markdown_chunk
+                    md_chunks_by_name.setdefault(mc.original_name, [])
+                    md_chunks_by_name[mc.original_name].append(mc.markdown_chunk)
+                    print(f"Markdown chunk size: {len(mc.markdown_chunk)} from {mc.original_name}")
+                elif response.HasField("generate"):
+                    gen = response.generate
+                    has_gen = has_gen or bool(gen.content or gen.reasoning_content)
+                    if gen.content:
+                        print(f"Content: {gen.content}")
+                    if gen.reasoning_content:
+                        print(f"Reasoning: {gen.reasoning_content}")
+                else:
+                    # other responses are ignored for this validation
+                    pass
+
+            self.assertTrue(chat_name_seen, "Chat name must be returned for new chat")
+            self.assertTrue(len(md_chunks_by_name) > 0, "At least one markdown chunk must be returned")
+            self.assertTrue(has_gen, "At least one generate response must be returned")
+
+            # Concatenate and write out md chunks
+            for original_name, chunks in md_chunks_by_name.items():
+                out_path = f"{original_name}.tmp"
+                with open(out_path, "w", encoding="utf-8") as f:
+                    f.write("".join(chunks))
+                print(f"Saved markdown to {out_path} ({sum(len(c) for c in chunks)} bytes)")
+                self.assertTrue(os.path.exists(out_path) and os.path.getsize(out_path) > 0,
+                                "Concatenated markdown file must be created and non-empty")
+
+        except Exception as e:
+            print(f"✗ Тест не прошел: {e}")
+            self.fail(f"NewMessage with docs and images failed: {e}")
 
 
 if __name__ == "__main__":
