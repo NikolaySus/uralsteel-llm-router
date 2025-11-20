@@ -778,13 +778,14 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
     def AvailableModelsText2Text(self, request, context):
         """Получить список доступных Text2Text моделей."""
         try:
-            return llm_pb2.StringsListResponse(
-                strings=available_models(ALL_API_VARS["yandexai"]["base_url"],
+            t = available_models(ALL_API_VARS["yandexai"]["base_url"],
                                          ALL_API_VARS["yandexai"]["key"],
                                          ALL_API_VARS["yandexai"]["folder"],
                                          WHITELIST_REGEX_TEXT2TEXT,
-                                         BLACKLIST_REGEX_TEXT2TEXT).append(
-                                         ALL_API_VARS["openaivlm"]["model"]))
+                                         BLACKLIST_REGEX_TEXT2TEXT)
+            t.append(ALL_API_VARS["openaivlm"]["model"])
+            return llm_pb2.StringsListResponse(
+                strings=t)
         except Exception as e:
             print(f"ERROR getting text2text models: {e}")
             context.set_details(f"ERROR getting text2text models: {e}")
@@ -1077,8 +1078,8 @@ if __name__ == "__main__":
                                  ALL_API_VARS["yandexai"]["key"],
                                  ALL_API_VARS["yandexai"]["folder"],
                                  WHITELIST_REGEX_TEXT2TEXT,
-                                 BLACKLIST_REGEX_TEXT2TEXT).append(
-                                 ALL_API_VARS["openaivlm"]["model"])
+                                 BLACKLIST_REGEX_TEXT2TEXT)
+    check_arr.append(ALL_API_VARS["openaivlm"]["model"])
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,
