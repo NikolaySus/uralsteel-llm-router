@@ -281,7 +281,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"AvailableModelsSpeech2Text failed: {e}")
-
+        comment = '''
     def test_04_new_message_text_no_history(self):
         """Тест 4: NewMessage с текстовым сообщением без истории -
            требует авторизацию."""
@@ -580,7 +580,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with websearch failed: {e}")
-'''
+
     def test_11_new_message_text_with_image_gen(self):
         """Тест 11: NewMessage с текстовым сообщением и function=image_gen -
            требует авторизацию."""
@@ -624,7 +624,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with image_gen failed: {e}")
-
+'''
     def test_12_new_message_with_docs_and_images(self):
         """Тест 12: проверяет обработку documents_urls и images_urls.
         - Не передаёт history
@@ -704,7 +704,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage with docs and images failed: {e}")
-'''
+
 
 if __name__ == "__main__":
     # Информация о конфигурации

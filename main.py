@@ -952,7 +952,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 try:
                     item = None
                     for r, i in proc_llm_stream_responses(
-                        messages, function_tool, 2048, model_to_use
+                        messages, function_tool, 131072, model_to_use
                     ):
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
@@ -978,7 +978,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             "content": result
                         })
                         for r, i in proc_llm_stream_responses(
-                            messages, "none", 8192, model_to_use
+                            messages, "none", 131072, model_to_use
                         ):
                             if context.is_active() is False:
                                 print("Client cancelled, stopping stream.")
