@@ -182,15 +182,7 @@ class AuthInterceptor(grpc.ServerInterceptor):
 
 
 def build_user_message(text_message: str, md_docs: dict, images_urls):
-    """Собирает сообщение пользователя для мультимодели в формате:
-    {
-      "role": "user",
-      "content": [
-        {"type": "input_text", "text": "..."},
-        {"type": "input_image", "image_url": "..."},
-        ...
-      ]
-    }
+    """Собирает сообщение пользователя для мультимодели.
 
     Правила:
     - Если md_docs пуст и images_urls is None -> вернуть простой вариант
@@ -229,11 +221,11 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
                     current_text += text_before
                 # Если накоплен текст — сохранить блок
                 if current_text:
-                    content.append({"type": "input_text", "text": current_text})
+                    content.append({"type": "text", "text": current_text})
                     current_text = ""
                 # Сохранить изображение отдельным блоком
                 data_url = m.group(0)
-                content.append({"type": "input_image", "image_url": data_url})
+                content.append({"type": "image_url", "image_url": {"url": data_url}})
                 last_end = m.end()
             # Хвостовой текст после последнего изображения
             tail = md[last_end:]
@@ -924,8 +916,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
                                                    text2text_override)
-            with open("tmp.json", "w", encoding="utf-8") as f:
-                json.dump(messages, f, indent=2, ensure_ascii=False)
+
             # Определяем модель для запроса
             if text2text_override:
                 model_to_use = text2text_override
