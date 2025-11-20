@@ -470,48 +470,44 @@ def generate_chat_name(user_message: str):
     Использует llm для создания короткого названия (до 1024 токенов).
     Возвращает строку с названием чата или None в случае ошибки.
     """
-    try:
-        messages = [
-            {
-                "role": "system",
-                "content": (
-                    "You are a helpful assistant that generates short, concise "
-                    "chat names based on the user's initial message. The name "
-                    "should be brief (4 words max), descriptive, and in the "
-                    "same language as the user message. Return only the name, "
-                    "nothing else."
-                )
-            },
-            {
-                "role": "user",
-                "content": user_message
-            }
-        ]
-        response = OpenAI(
-            base_url=ALL_API_VARS["yandexai"]["base_url"],
-            api_key=ALL_API_VARS["yandexai"]["key"],
-            project=ALL_API_VARS["yandexai"]["folder"],
-        ).chat.completions.create(
-            model=ALL_API_VARS["yandexaisummary"]["model"],
-            messages=messages,
-            max_tokens=128,
-            temperature=0.9
-        )
-        name = response.choices[0].message.content.strip()
-        if not hasattr(response, "usage"):
-            raise ValueError("usage required")
-        prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
-        completion_tokens = getattr(response.usage, "completion_tokens", 0)
-        total_tokens = getattr(response.usage, "total_tokens", 0)
-        usd = ALL_API_VARS["yandexaisummary"]["price_coef"] * total_tokens
-        return llm_pb2.ChatNameResponseType(name=name,
-                                            prompt_tokens=prompt_tokens,
-                                            completion_tokens=completion_tokens,
-                                            total_tokens=total_tokens,
-                                            expected_cost_usd=usd)
-    except Exception as e:
-        print(f"ERROR generating chat name: {e}")
-        return None
+    messages = [
+        {
+            "role": "system",
+            "content": (
+                "You are a helpful assistant that generates short, concise "
+                "chat names based on the user's initial message. The name "
+                "should be brief (4 words max), descriptive, and in the "
+                "same language as the user message. Return only the name, "
+                "nothing else."
+            )
+        },
+        {
+            "role": "user",
+            "content": user_message
+        }
+    ]
+    response = OpenAI(
+        base_url=ALL_API_VARS["yandexai"]["base_url"],
+        api_key=ALL_API_VARS["yandexai"]["key"],
+        project=ALL_API_VARS["yandexai"]["folder"],
+    ).chat.completions.create(
+        model=ALL_API_VARS["yandexaisummary"]["model"],
+        messages=messages,
+        max_tokens=128,
+        temperature=0.9
+    )
+    name_c = response.choices[0].message.content.strip()
+    if not hasattr(response, "usage"):
+        raise ValueError("usage required")
+    prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
+    completion_tokens = getattr(response.usage, "completion_tokens", 0)
+    total_tokens = getattr(response.usage, "total_tokens", 0)
+    usd = ALL_API_VARS["yandexaisummary"]["price_coef"] * total_tokens
+    return llm_pb2.ChatNameResponseType(name=name_c,
+                                        prompt_tokens=prompt_tokens,
+                                        completion_tokens=completion_tokens,
+                                        total_tokens=total_tokens,
+                                        expected_cost_usd=usd)
 
 
 def build_messages_from_history(history, user_message: str,
@@ -881,11 +877,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             # Если это новый чат (история пуста), генерируем название
             if not history:
-                chat_name_resp = generate_chat_name(user_message)
-                if chat_name_resp:
-                    yield chat_name_resp
-                else:
-                    raise ValueError("Ошибка генерации названия чата")
+                yield generate_chat_name(user_message)
 
             # Обработка документов
             md_docs = dict()
