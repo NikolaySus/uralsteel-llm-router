@@ -200,9 +200,10 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
       input_text закрывается, добавляется input_image c image_url=data:..., и
       затем начинается новый input_text.
     """
+    is_there_images = False
     # Базовый случай без md и изображений
     if (not md_docs) and (images_urls is None):
-        return {"role": "user", "content": text_message}
+        return {"role": "user", "content": text_message}, is_there_images
 
     content = []
 
@@ -220,6 +221,7 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
             current_text = ""
             last_end = 0
             for m in img_pattern.finditer(md):
+                is_there_images = True
                 # Текст до изображения
                 text_before = md[last_end:m.start()]
                 if text_before:
@@ -247,9 +249,9 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
 
     # Если в результате нет структурированного контента, откат к простому
     if not content:
-        return {"role": "user", "content": text_message}
+        return {"role": "user", "content": text_message}, is_there_images
 
-    return {"role": "user", "content": content}
+    return {"role": "user", "content": content}, is_there_images
 
 
 def available_models(base_url: str,
@@ -888,10 +890,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         md_content = response.text
                         md_docs[md_url_obj.original_name] = md_content
                     except Exception as e:
-                        print(f"ERROR downloading markdown from {md_url_obj.url}: {e}")
+                        print(f"ERROR loading md from {md_url_obj.url}: {e}")
 
             # Сборка user_message
-            user_message = build_user_message(user_message, md_docs, images_urls)
+            user_message, vlm = build_user_message(user_message,
+                                                        md_docs, images_urls)
 
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
@@ -900,6 +903,19 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Определяем модель для запроса
             if text2text_override:
                 model_to_use = text2text_override
+                if vlm and model_to_use != ALL_API_VARS["openaivlm"]["model"]:
+                    yield llm_pb2.NewMessageResponse(
+                        generate=llm_pb2.GenerateResponseType(
+                            content="Ваш запрос слишком сложный для выбранной "
+                                    f"модели, пожалуйста, выберите {
+                                        ALL_API_VARS["openaivlm"]["model"]}",
+                            reasoning_content="",
+                            datetime=datetime.now().strftime(DATETIME_FORMAT)
+                        )
+                    )
+                    return
+            elif vlm:
+                model_to_use = ALL_API_VARS["openaivlm"]["model"]
             else:
                 model_to_use = ALL_API_VARS["yandexai"]["model"]
 
