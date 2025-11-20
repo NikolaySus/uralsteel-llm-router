@@ -1055,18 +1055,20 @@ if __name__ == "__main__":
                  "--env-file", ".env", "prepare.py"],
                 check=True
             )
-            with open(CONFIG_PATH) as f:
-                config = json.load(f)
-                if not 'generated_at' in config:
-                    raise ValueError("Empty config!")
-                print(f"Config generated at: {config.get(
-                    'generated_at', 'n/a')}")
-                for name, coef in config.get("prices_coefs", {}).items():
-                    ALL_API_VARS[name]["price_coef"] = coef
-                    print(f"Price coef for {name}: {coef}")
         except Exception as e:
             print(f"ERROR: config gen fail: {e}")
             exit(1)
+    try:
+        with open(CONFIG_PATH) as f:
+            config = json.load(f)
+        if 'generated_at' not in config or not config['generated_at']:
+            raise ValueError("Invalid config: missing 'generated_at'")
+        for name, coef in config.get("prices_coefs", {}).items():
+            ALL_API_VARS[name]["price_coef"] = coef
+            print(f"Price coef for {name}: {coef}")
+    except Exception as e:
+        print(f"ERROR: invalid config: {e}")
+        exit(1)
     # Информация о безопасности
     if SECRET_KEY:
         print("Authorization ENABLED")
