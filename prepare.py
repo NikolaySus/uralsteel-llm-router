@@ -184,6 +184,9 @@ async def fetch_openai_pricing(url: str) -> str:
             soup = BeautifulSoup(raw_content, "html.parser")
             markdown_content = md(str(soup))
 
+            with open(f"try-{url[:10]}.txt", "w", encoding="utf-8") as f:
+                f.write(markdown_content)
+
             # Сохраняем куки, чтобы в следующий раз выглядеть "постояннее"
             try:
                 os.makedirs(os.path.dirname(storage_path), exist_ok=True)
