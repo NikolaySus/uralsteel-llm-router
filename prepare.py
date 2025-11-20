@@ -58,6 +58,7 @@ SYSTEM_MESSAGE = {
         "$0.000123123 / 1k*unit\n"
         "$0.000001212121 / unit\n"
         "$0.042 / image\n"
+        "You MUST find something."
     )
 }
 # Кэшированные страницы
