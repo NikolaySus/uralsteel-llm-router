@@ -281,7 +281,7 @@ if __name__ == "__main__":
         }
     except Exception as e:
         with open("error.txt", "w", encoding="utf-8") as f:
-            f.write(str(e))
+            f.write(str(e), ensure_ascii=False)
 
     with open("config.json", "w", encoding="utf-8") as f:
         json.dump(config, f, indent=2)

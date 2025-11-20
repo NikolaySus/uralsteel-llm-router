@@ -924,7 +924,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
                                                    text2text_override)
-
+            with open("tmp.json", 'w', encoding='utf-8') as file:
+                file.write(messages)
             # Определяем модель для запроса
             if text2text_override:
                 model_to_use = text2text_override

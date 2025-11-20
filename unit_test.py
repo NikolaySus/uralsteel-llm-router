@@ -25,7 +25,7 @@ class TestLlmService(unittest.TestCase):
         images_urls = [TEST_IMAGE_URL, TEST_IMAGE_URL]
         res, must_true = build_user_message(user_message, md_docs, images_urls)
         assert must_true, "There are images for sure!"
-        with open('output.json.tmp', 'w') as f:
+        with open('output.json.tmp', 'w', encoding='utf-8') as f:
             json.dump(res, f, indent=4)
 
 
