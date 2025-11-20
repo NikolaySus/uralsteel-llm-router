@@ -1057,7 +1057,7 @@ if __name__ == "__main__":
             )
             with open(CONFIG_PATH) as f:
                 config = json.load(f)
-                if not config:
+                if not 'generated_at' in config:
                     raise ValueError("Empty config!")
                 print(f"Config generated at: {config.get(
                     'generated_at', 'n/a')}")

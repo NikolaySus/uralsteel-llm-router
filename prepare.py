@@ -66,81 +66,136 @@ CACHED_PAGES = dict()
 
 
 async def fetch_openai_pricing(url: str) -> str:
-    """Получить и обработать страницу с ценами."""
+    """Получить и обработать страницу с ценами, имитируя поведение реального пользователя."""
+    import random
+    from urllib.parse import urlparse
+
+    # Набор реалистичных user-agent строк разных платформ/версий
+    UA_POOL = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.5993.70 Safari/537.36",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0",
+    ]
+    ua = random.choice(UA_POOL)
+
+    # Случайные размеры окна (как у реальных мониторов)
+    viewports = [(1920, 1080), (1366, 768), (1536, 864), (1440, 900), (1680, 1050)]
+    vw, vh = random.choice(viewports)
+
+    # Локали/таймзоны для большей правдоподобности
+    locales = ["en-US", "en-GB", "de-DE", "fr-FR"]
+    locale = random.choice(locales)
+    timezones = [
+        "America/New_York", "America/Los_Angeles", "Europe/Berlin",
+        "Europe/London", "Europe/Paris", "Asia/Tokyo"
+    ]
+    tz = random.choice(timezones)
+
+    # Базовые задержки как у пользователя
+    async def human_sleep(a=0.8, b=1.8):
+        await asyncio.sleep(random.uniform(a, b))
+
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
             args=[
-                '--disable-blink-features=AutomationControlled',
-                '--disable-dev-shm-usage',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-                '--disable-web-security',
-                '--disable-features=VizDisplayCompositor',
-                '--disable-background-timer-throttling',
-                '--disable-backgrounding-occluded-windows',
-                '--disable-renderer-backgrounding',
-            ]
+                # Уменьшаем явные признаки автоматизации
+                "--disable-blink-features=AutomationControlled",
+                "--no-sandbox",
+                "--disable-setuid-sandbox",
+                "--disable-dev-shm-usage",
+            ],
         )
         context = await browser.new_context(
-            user_agent=("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
-                        "AppleWebKit/537.36 (KHTML, like Gecko) "
-                        "Chrome/129.0.0.0 Safari/537.36"),
-            viewport={"width": 1920, "height": 1080},
-            extra_http_headers={
-                'Accept': ('text/html,application/xhtml+xml,application/xml;'
-                           'q=0.9,image/webp,*/*;q=0.8'),
-                'Accept-Language': 'en-US,en;q=0.5',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'DNT': '1',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-            },
-            bypass_csp=True,
+            user_agent=ua,
+            viewport={"width": vw, "height": vh},
+            locale=locale,
+            timezone_id=tz,
+            color_scheme=random.choice(["light", "dark"]),
+            permissions=[],
         )
+
+        # Маскируем webdriver и добавляем правдоподобные поля
         await context.add_init_script('''
-            Object.defineProperty(navigator, 'webdriver', {
-                get: () => undefined,
-            });
-            Object.defineProperty(navigator, 'plugins', {
-                get: () => [1, 2, 3, 4, 5],
-            });
-            Object.defineProperty(navigator, 'languages', {
-                get: () => ['en-US', 'en'],
-            });
+            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+            // Имитируем наличие плагинов/медиа-устройств
+            Object.defineProperty(navigator, 'plugins', { get: () => ({ length: 3 }) });
+            Object.defineProperty(navigator, 'languages', { get: () => ['en-US','en'] });
+            // webgl vendor/renderer
+            const getParameter = WebGLRenderingContext.prototype.getParameter;
+            WebGLRenderingContext.prototype.getParameter = function(parameter){
+              if (parameter === 37445) return 'Intel Inc.'; // UNMASKED_VENDOR_WEBGL
+              if (parameter === 37446) return 'Intel Iris OpenGL Engine'; // UNMASKED_RENDERER_WEBGL
+              return getParameter.call(this, parameter);
+            };
         ''')
-        page = await context.new_page()
+
+        # Пытаемся повторно использовать куки для домена, чтобы выглядеть как возвращающийся пользователь
+        storage_path = os.path.join(".playwright_storage", urlparse(url).netloc.replace(":", "_"))
         try:
-            await page.goto(url, wait_until="networkidle", timeout=60000)
-            await page.wait_for_function(
-                ("() => document.title && "
-                 "!document.title.includes('Checking your browser')"),
-                timeout=60000
-            )
-            await page.wait_for_selector('body', timeout=30000)
-            await asyncio.sleep(3)
-            page_title = await page.title()
-            page_content = await page.content()
-            if ("cloudflare" in page_content.lower()
-                or "challenge" in page_content.lower()):
-                print("Cloudflare challenge detected, waiting longer...")
-                await asyncio.sleep(10)
+            if os.path.exists(storage_path):
+                await context.add_cookies(json.load(open(storage_path, "r", encoding="utf-8")))
+        except Exception:
+            pass
+
+        page = await context.new_page()
+
+        # Минимальная навигация как пользователь
+        try:
+            await page.goto(url, wait_until="domcontentloaded", timeout=60000)
+            await human_sleep(1.0, 2.5)
+
+            # Дожидаемся содержимого
+            await page.wait_for_selector("body", timeout=30000)
+            await human_sleep(0.8, 1.8)
+
+            # Немного скроллим страницу
+            try:
+                for _ in range(random.randint(1, 3)):
+                    await page.mouse.wheel(0, random.randint(400, 1200))
+                    await human_sleep(0.5, 1.2)
+            except Exception:
+                pass
+
+            # Ждём, пока уйдут возможные проверки/редиректы
+            try:
+                await page.wait_for_function(
+                    "() => document.title && !/checking your browser/i.test(document.title)",
+                    timeout=45000,
+                )
+            except Exception:
+                pass
+
+            # Если видим Cloudflare/челлендж, ждём дольше
+            content_snapshot = (await page.content()).lower()
+            if any(k in content_snapshot for k in ["cloudflare", "challenge", "attention required"]):
+                await human_sleep(5.0, 8.0)
                 try:
                     await page.wait_for_function(
-                        "() => document.body.innerText.length > 1000",
-                        timeout=30000
+                        "() => (document.body && document.body.innerText && document.body.innerText.length > 800)",
+                        timeout=45000,
                     )
                 except Exception:
-                    print("Content loading taking longer than expected...")
+                    pass
+
             raw_content = await page.content()
             soup = BeautifulSoup(raw_content, "html.parser")
             markdown_content = md(str(soup))
+
+            # Сохраняем куки, чтобы в следующий раз выглядеть "постояннее"
+            try:
+                os.makedirs(os.path.dirname(storage_path), exist_ok=True)
+                json.dump(await context.cookies(), open(storage_path, "w", encoding="utf-8"))
+            except Exception:
+                pass
+
             return True, markdown_content
         except Exception as e:
             print(f"Error fetching OpenAI pricing: {e}")
             try:
                 content = await page.content()
-                return False, content[:1000]  # Первые 1000 символов для дебага
+                return False, content[:1000]
             except Exception as e2:
                 return False, f"Also failed to get content: {e2}"
         finally:
