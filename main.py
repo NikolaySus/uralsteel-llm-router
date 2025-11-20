@@ -876,8 +876,16 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 history = []
 
             # Если это новый чат (история пуста), генерируем название
-            #if not history:
-            #    yield generate_chat_name(user_message)
+            if not history:
+                try:
+                    chat_name_resp = generate_chat_name(user_message)
+                    if chat_name_resp is not None:
+                        yield llm_pb2.NewMessageResponse(chat_name=chat_name_resp)
+                except Exception as e:
+                    print(f"ERROR generating chat name: {e}")
+                    with open("FUUUUCK.txt", "w", encoding="utf-8") as f:
+                        f.write(str(e))
+                    # Не прерываем обработку запроса из-за ошибки имени чата
 
             # Обработка документов
             md_docs = dict()
