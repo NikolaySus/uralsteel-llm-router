@@ -201,7 +201,15 @@ class AuthInterceptor(grpc.ServerInterceptor):
 
 def image_url_to_base64(url: str) -> str:
     # Download image
-    response = requests.get(url, timeout=10)
+    headers = {
+        "User-Agent": (
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+            "AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/130.0.0.0 Safari/537.36"
+        )
+    }
+
+    response = requests.get(url, headers=headers, timeout=10)
     response.raise_for_status()
     data = response.content
 
