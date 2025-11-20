@@ -769,7 +769,7 @@ def responses_from_llm_chunk(chunk):
 
 
 def proc_llm_stream_responses(messages, tool_choice,
-                              max_tokens, model_to_use):
+                              max_tokens, api_to_use, key_to_use, folder_to_use, model_to_use):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
@@ -783,9 +783,9 @@ def proc_llm_stream_responses(messages, tool_choice,
         - item: объект вызова функции или None
     """
     response = OpenAI(
-        base_url=ALL_API_VARS["yandexai"]["base_url"],
-        api_key=ALL_API_VARS["yandexai"]["key"],
-        project=ALL_API_VARS["yandexai"]["folder"],
+        base_url=api_to_use,
+        api_key=key_to_use,
+        project=folder_to_use,
     ).chat.completions.create(
         model=model_to_use,
         messages=messages,
@@ -967,6 +967,10 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                                    text2text_override)
 
             # Определяем модель для запроса
+            api_to_use = ALL_API_VARS["yandexai"]["base_url"]
+            key_to_use = ALL_API_VARS["yandexai"]["key"]
+            model_to_use = ALL_API_VARS["yandexai"]["model"]
+            folder_to_use = ALL_API_VARS["yandexai"]["folder"]
             if text2text_override:
                 model_to_use = text2text_override
                 if vlm and model_to_use != ALL_API_VARS["openaivlm"]["model"]:
@@ -977,6 +981,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 model_to_use = ALL_API_VARS["openaivlm"]["model"]
             else:
                 model_to_use = ALL_API_VARS["yandexai"]["model"]
+            if model_to_use == ALL_API_VARS["openaivlm"]["model"]:
+                api_to_use = ALL_API_VARS["openai"]["base_url"]
+                key_to_use = ALL_API_VARS["openai"]["key"]
+                model_to_use = ALL_API_VARS["openai"]["model"]
+                folder_to_use = None
 
             # Определяем инструмент функции
             if function_tool is None:
@@ -993,7 +1002,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 try:
                     item = None
                     for r, i in proc_llm_stream_responses(
-                        messages, function_tool, 131072, model_to_use
+                        messages, function_tool, 131072, api_to_use, key_to_use, folder_to_use, model_to_use
                     ):
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
@@ -1019,7 +1028,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             "content": result
                         })
                         for r, i in proc_llm_stream_responses(
-                            messages, "none", 131072, model_to_use
+                            messages, "none", 131072, api_to_use, key_to_use, folder_to_use, model_to_use
                         ):
                             if context.is_active() is False:
                                 print("Client cancelled, stopping stream.")
