@@ -187,11 +187,11 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
     Правила:
     - Если md_docs пуст и images_urls is None -> вернуть простой вариант
       {"role": "user", "content": text_message}
-    - Если есть изображения, они добавляются в конец content как input_image
-    - Если есть md_docs: каждую md строку помещать в input_text, но если
+    - Если есть изображения, они добавляются в конец content как image_url
+    - Если есть md_docs: каждую md строку помещать в text, но если
       встречается встроенная base64 картинка (data:image/...), то текущий
-      input_text закрывается, добавляется input_image c image_url=data:..., и
-      затем начинается новый input_text.
+      text закрывается, добавляется image_url c image_url=data:..., и
+      затем начинается новый text.
     """
     is_there_images = False
     # Базовый случай без md и изображений
@@ -200,9 +200,9 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
 
     content = []
 
-    # Начальный текст пользователя как input_text, если он есть
+    # Начальный текст пользователя как text, если он есть
     if text_message:
-        content.append({"type": "input_text", "text": text_message})
+        content.append({"type": "text", "text": text_message})
 
     # Обработка markdown документов
     if md_docs:
@@ -232,13 +232,13 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
             if tail:
                 current_text += tail
             current_text += f'\n# FILE "{filename}" END'
-            content.append({"type": "input_text", "text": current_text})
+            content.append({"type": "text", "text": current_text})
 
     # Добавление внешних изображений в конце
     if images_urls:
         for url in images_urls:
             if url:
-                content.append({"type": "input_image", "image_url": url})
+                content.append({"type": "image_url", "image_url": {"url": url}})
 
     # Если в результате нет структурированного контента, откат к простому
     if not content:
@@ -916,8 +916,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
                                                    text2text_override)
-            with open("tmp.json", "w", encoding="utf-8") as f:
-                json.dump(messages, f, indent=2, ensure_ascii=False)
+
             # Определяем модель для запроса
             if text2text_override:
                 model_to_use = text2text_override
