@@ -14,6 +14,9 @@ import os
 import re
 import subprocess
 import urllib
+import base64
+import requests
+import imghdr
 
 import asyncio
 from google.protobuf import empty_pb2
@@ -109,6 +112,21 @@ TOOLS = [
 TOOLS_NAMES = [
     tool["function"]["name"] for tool in TOOLS
 ]
+# url -> base64
+IMGHDR_TO_MIME = {
+    "jpeg": "image/jpeg",
+    "png" : "image/png",
+    "gif" : "image/gif",
+    "bmp" : "image/bmp",
+    "tiff": "image/tiff",
+    "rgb" : "image/x-rgb",
+    "webp": "image/webp",
+    "pbm" : "image/x-portable-bitmap",
+    "pgm" : "image/x-portable-graymap",
+    "ppm" : "image/x-portable-pixmap",
+    "rast":	"image/cmu-raster",
+    "xbm" :	"image/x-xbitmap"
+}
 
 
 class AuthInterceptor(grpc.ServerInterceptor):
@@ -181,6 +199,29 @@ class AuthInterceptor(grpc.ServerInterceptor):
         return continuation(handler_call_details)
 
 
+def image_url_to_base64(url: str) -> str:
+    # Download image
+    response = requests.get(url, timeout=10)
+    response.raise_for_status()
+    data = response.content
+
+    # Detect image type from bytes
+    img_type = imghdr.what(None, data)
+    if img_type is None:
+        raise ValueError("Could not detect image type")
+
+    # Get MIME
+    mime = IMGHDR_TO_MIME.get(img_type)
+    if not mime:
+        raise ValueError(f"Unsupported image type: {img_type}")
+
+    # Encode base64
+    b64 = base64.b64encode(data).decode("utf-8")
+
+    # Return valid OpenAI data URL
+    return f"data:{mime};base64,{b64}"
+
+
 def build_user_message(text_message: str, md_docs: dict, images_urls):
     """Собирает сообщение пользователя для мультимодели.
 
@@ -238,7 +279,7 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
     if images_urls:
         for url in images_urls:
             if url:
-                content.append({"type": "image_url", "image_url": {"url": url}})
+                content.append({"type": "image_url", "image_url": {"url": image_url_to_base64(url)}})
 
     # Если в результате нет структурированного контента, откат к простому
     if not content:
