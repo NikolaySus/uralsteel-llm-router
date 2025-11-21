@@ -473,7 +473,7 @@ async def convert_to_md_async(url: str):
                 "url": url
             }]
         }
-        async_client = httpx.AsyncClient(timeout=60.0)
+        async_client = httpx.AsyncClient(timeout=90.0)
         response = await async_client.post(docling_url, json=payload)
         data = response.json()
         filename = urllib.parse.unquote(data.get("document", {}).get("filename"))
@@ -934,7 +934,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 for url in documents_urls:
                     filename, md_content = convert_to_md(url)
                     if filename is None or md_content is None:
-                        raise ValueError("Ошибка парсинга файла")
+                        raise ValueError("Parse file error")
                     md_docs[filename] = md_content
                     # Разбиваем контент на чанки размером CHUNK_SIZE
                     for i in range(0, len(md_content), CHUNK_SIZE):
