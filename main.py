@@ -796,6 +796,8 @@ def proc_llm_stream_responses(messages, tool_choice,
         tools=TOOLS
     )
     try:
+        with open("FUUUUCK.txt", "w", encoding="utf-8") as f:
+            f.write(f"{api_to_use}\n{key_to_use}\n{(folder_to_use or "")}\n{model_to_use}")
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
             resp, item = function_call_responses_from_llm_chunk(chunk)
@@ -924,8 +926,6 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         yield llm_pb2.NewMessageResponse(chat_name=chat_name_resp)
                 except Exception as e:
                     print(f"ERROR generating chat name: {e}")
-                    with open("FUUUUCK.txt", "w", encoding="utf-8") as f:
-                        f.write(str(e))
                     # Не прерываем обработку запроса из-за ошибки имени чата
 
             # Обработка документов
