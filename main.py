@@ -480,6 +480,8 @@ async def convert_to_md_async(url: str):
         md_content = data.get("document", {}).get("md_content")
         return filename, md_content
     except Exception as e:
+         with open("FUUUUUUUUUCK.txt", "w", encoding="utf-8") as f:
+            f.write(f"{e}")
         print(f"ERROR converting document to md: {e}")
         return None, None
 
