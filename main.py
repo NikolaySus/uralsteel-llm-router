@@ -788,7 +788,6 @@ def proc_llm_stream_responses(messages, tool_choice,
     ).chat.completions.create(
         model=model_to_use,
         messages=messages,
-        temperature=0.3,
         stream=True,
         tool_choice=tool_choice,
         tools=TOOLS
