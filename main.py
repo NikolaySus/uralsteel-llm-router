@@ -988,7 +988,6 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if model_to_use == ALL_API_VARS["openaivlm"]["model"]:
                 api_to_use = ALL_API_VARS["openai"]["base_url"]
                 key_to_use = ALL_API_VARS["openai"]["key"]
-                model_to_use = ALL_API_VARS["openai"]["model"]
                 folder_to_use = None
 
             # Определяем инструмент функции
