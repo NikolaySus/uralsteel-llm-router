@@ -96,6 +96,9 @@ def get_metadata():
 def process_llm_responses(responses):
     """Обрабатывает поток ответов от LLM и возвращает результаты.
     
+    Копит content и reasoning_content по мере приходящих generate чанков
+    и печатает их один раз в конце, после получения complete.
+    
     Args:
         responses: Поток ответов от LLM (iterator NewMessageResponse)
     
@@ -130,14 +133,19 @@ def process_llm_responses(responses):
             gen = response.generate
             if gen.content:
                 content_parts.append(gen.content)
-                print(f"Content: {gen.content}", flush=True)
             if gen.reasoning_content:
                 reasoning_parts.append(gen.reasoning_content)
-                print(f"Reasoning: {gen.reasoning_content}", flush=True)
 
         elif response.HasField("complete"):
             has_complete = True
             comp = response.complete
+            # Печатаем накопленные контент и reasoning перед статистикой
+            final_content = "".join(content_parts)
+            final_reasoning = "".join(reasoning_parts)
+            if final_content:
+                print(f"\nContent: {final_content}", flush=True)
+            if final_reasoning:
+                print(f"Reasoning: {final_reasoning}", flush=True)
             print("\n✓ Завершено. Токены: "
                   f"prompt={comp.prompt_tokens}, "
                   f"completion={comp.completion_tokens}, "
@@ -660,10 +668,11 @@ class TestLlmService(unittest.TestCase):
             responses = stub.NewMessage(request_generator(), metadata=get_metadata())
 
             chat_name_seen = False
-            has_gen = False
             md_chunks_by_name = {}
+            buffer = []  # buffer responses for reuse with helper
 
             for response in responses:
+                buffer.append(response)
                 if response.HasField("chat_name"):
                     chat_name_seen = True
                     cn = response.chat_name
@@ -678,16 +687,13 @@ class TestLlmService(unittest.TestCase):
                     md_chunks_by_name.setdefault(mc.original_name, [])
                     md_chunks_by_name[mc.original_name].append(mc.markdown_chunk)
                     print(f"Markdown chunk size: {len(mc.markdown_chunk)} from {mc.original_name}")
-                elif response.HasField("generate"):
-                    gen = response.generate
-                    has_gen = has_gen or bool(gen.content or gen.reasoning_content)
-                    if gen.content:
-                        print(f"Content: {gen.content}")
-                    if gen.reasoning_content:
-                        print(f"Reasoning: {gen.reasoning_content}")
                 else:
-                    # other responses are ignored for this validation
+                    # other responses are handled by helper
                     pass
+
+            # Process accumulated responses via common helper to print and collect content/reasoning
+            _, has_gen, has_complete, __, content, reasoning, fc = \
+                process_llm_responses(iter(buffer))
 
             self.assertTrue(chat_name_seen, "Chat name must be returned for new chat")
             self.assertTrue(len(md_chunks_by_name) > 0, "At least one markdown chunk must be returned")
