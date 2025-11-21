@@ -480,8 +480,6 @@ async def convert_to_md_async(url: str):
         md_content = data.get("document", {}).get("md_content")
         return filename, md_content
     except Exception as e:
-        with open("FUUUUUUUUUCK.txt", "w", encoding="utf-8") as f:
-            f.write(f"{e}")
         print(f"ERROR converting document to md: {e}")
         return None, None
 
@@ -503,8 +501,6 @@ def convert_to_md(url: str):
         loop.close()
         return result
     except Exception as e:
-        with open("FUUUUUUUUUUUUUUUCK.txt", "w", encoding="utf-8") as f:
-            f.write(f"{e}")
         print(f"ERROR in convert_to_md wrapper: {e}")
         return None, None
 
@@ -773,21 +769,18 @@ def responses_from_llm_chunk(chunk):
 
 
 def proc_llm_stream_responses(messages, tool_choice,
-                              max_tokens, api_to_use, key_to_use, folder_to_use, model_to_use):
+                              api_to_use, key_to_use, folder_to_use, model_to_use):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
         messages: Сообщения для отправки в LLM
         tool_choice: Параметр tool_choice для LLM (например, "auto")
-        max_tokens: Максимальное количество токенов для ответа LLM
     
     Yields:
         Кортеж (response, item) где:
         - response: llm_pb2.NewMessageResponse или None
         - item: объект вызова функции или None
     """
-    with open("FUUUUCK.txt", "w", encoding="utf-8") as f:
-        f.write(f"{api_to_use}\n{key_to_use}\n{(folder_to_use or "")}\n{model_to_use}")
     response = OpenAI(
         base_url=api_to_use,
         api_key=key_to_use,
@@ -795,7 +788,6 @@ def proc_llm_stream_responses(messages, tool_choice,
     ).chat.completions.create(
         model=model_to_use,
         messages=messages,
-        max_tokens=max_tokens,
         temperature=0.3,
         stream=True,
         tool_choice=tool_choice,
@@ -1005,7 +997,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 try:
                     item = None
                     for r, i in proc_llm_stream_responses(
-                        messages, function_tool, 131072, api_to_use, key_to_use, folder_to_use, model_to_use
+                        messages, function_tool, api_to_use, key_to_use, folder_to_use, model_to_use
                     ):
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
@@ -1031,7 +1023,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             "content": result
                         })
                         for r, i in proc_llm_stream_responses(
-                            messages, "none", 131072, api_to_use, key_to_use, folder_to_use, model_to_use
+                            messages, "none", api_to_use, key_to_use, folder_to_use, model_to_use
                         ):
                             if context.is_active() is False:
                                 print("Client cancelled, stopping stream.")
