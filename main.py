@@ -15,15 +15,18 @@ import re
 import subprocess
 import urllib
 import base64
-import requests
+import uuid
+import asyncio
 import imghdr
 
-import asyncio
+import requests
 from google.protobuf import empty_pb2
 import grpc
 import httpx
 from openai import OpenAI
 from tavily import TavilyClient
+from minio import Minio
+from minio.error import S3Error
 
 import llm_pb2
 import llm_pb2_grpc
@@ -69,6 +72,11 @@ WHITELIST_REGEX_TEXT2TEXT  = os.environ.get('WHITELIST_REGEX_TEXT2TEXT', '.*')
 BLACKLIST_REGEX_TEXT2TEXT  = os.environ.get('BLACKLIST_REGEX_TEXT2TEXT', '$^')
 WHITELIST_REGEX_SPEECH2TEXT= os.environ.get('WHITELIST_REGEX_SPEECH2TEXT', '.*')
 BLACKLIST_REGEX_SPEECH2TEXT= os.environ.get('BLACKLIST_REGEX_SPEECH2TEXT', '$^')
+# S3
+MINIO_ADDRESS = os.environ.get('MINIO_ADDRESS', '')
+BUCKET_NAME = os.environ.get('BUCKET_NAME', 'cache')
+MINIO_ACCESS_KEY = os.environ.get('MINIO_ACCESS_KEY', None)
+MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
 # Инструменты для моделей с поддержкой функций
 TOOLS = [
     {
@@ -576,11 +584,20 @@ def build_messages_from_history(history, user_message: str,
         )
     }]
     if history:
-        for message in history:
-            messages.append({
-                "role": llm_pb2.Role.Name(message.role),
-                "content": message.body
-            })
+        # Minio get
+        minio_client = Minio(
+            MINIO_ADDRESS,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=True
+        )
+        for message_uuid in history:
+            try:
+                messages.append(json.loads(minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8')))
+            except S3Error as e:
+                print(f"Error getting object from MinIO: {e}")
+            except json.JSONDecodeError as e:
+                print(f"Error decoding JSON: {e}")
     messages.append(user_message)
     return messages
 
@@ -750,7 +767,7 @@ def responses_from_llm_chunk(chunk):
                                   (total_tokens or 0),
                 datetime=datetime.now().strftime(DATETIME_FORMAT)
             )
-        )
+        ), None
     # Если один из delta content есть, создаём GenerateResponseType
     elif delta_content is not None or delta_reasoning_content is not None:
         return llm_pb2.NewMessageResponse(
@@ -759,11 +776,11 @@ def responses_from_llm_chunk(chunk):
                 reasoning_content=(delta_reasoning_content or ""),
                 datetime=datetime.now().strftime(DATETIME_FORMAT)
             )
-        )
+        ), delta_content
     else:
         # Не удалось разобрать часть ответа
         print(f"WARN: {chunk}")
-        return None
+        return None, None
 
 
 def proc_llm_stream_responses(messages, tool_choice,
@@ -794,10 +811,11 @@ def proc_llm_stream_responses(messages, tool_choice,
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
             resp, item = function_call_responses_from_llm_chunk(chunk)
+            delta_content = None
             if resp is None:
-                resp = responses_from_llm_chunk(chunk)
+                resp, delta_content = responses_from_llm_chunk(chunk)
             if resp is not None:
-                yield (resp, item)
+                yield (resp, item, delta_content)
     finally:
         response.response.close()
 
@@ -942,6 +960,30 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Сборка user_message
             user_message, vlm = build_user_message(user_message,
                                                    md_docs, images_urls)
+            
+            # Minio put
+            minio_client = Minio(
+                MINIO_ADDRESS,
+                access_key=MINIO_ACCESS_KEY,
+                secret_key=MINIO_SECRET_KEY,
+                secure=True
+            )
+            object_name = str(uuid.uuid4())
+            json_bytes = json.dumps(user_message).encode('utf-8')
+            data_stream = BytesIO(json_bytes)
+            try:
+                minio_client.put_object(
+                    BUCKET_NAME,
+                    object_name,
+                    data_stream,
+                    length=len(json_bytes),
+                    content_type='application/json'
+                )
+                yield llm_pb2.NewMessageResponse(
+                    user_message_uid=object_name
+                )
+            except Exception as e:
+                print(f"Error uploading object: {e}")
 
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
@@ -978,12 +1020,16 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             # Отправка запроса в OpenAI API на генерацию ответа, если
             # пользователь не отменял запрос
+            content = ""
+            meta = None
             if context.is_active():
                 try:
                     item = None
-                    for r, i in proc_llm_stream_responses(
+                    for r, i, d in proc_llm_stream_responses(
                         messages, function_tool, api_to_use, key_to_use, folder_to_use, model_to_use
                     ):
+                        if d is not None:
+                            content += d
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
                             break
@@ -1007,9 +1053,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             "tool_call_id": item["tool_calls"][0]["id"],
                             "content": result
                         })
-                        for r, i in proc_llm_stream_responses(
+                        for r, i, d in proc_llm_stream_responses(
                             messages, "none", api_to_use, key_to_use, folder_to_use, model_to_use
                         ):
+                            if d is not None:
+                                content += d
                             if context.is_active() is False:
                                 print("Client cancelled, stopping stream.")
                                 break
@@ -1020,6 +1068,37 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     context.set_details(f"STREAM ERROR: {e}")
             else:
                 print("Client cancelled, stopping stream.")
+
+            object_name = str(uuid.uuid4())
+            if meta is not None and hasattr(meta, "image_gen") and meta.image_gen.image_base64:
+                content = [
+                    {
+                        "type": "text",
+                        "text": content
+                    },
+                    {
+                        "type": "image_url",
+                        "image_url": { "url": meta.image_gen.image_base64 }
+                    }
+                ]
+            json_bytes = json.dumps({"role": "assistant", "content": content}).encode('utf-8')
+            data_stream = BytesIO(json_bytes)
+            try:
+                minio_client.put_object(
+                    BUCKET_NAME,
+                    object_name,
+                    data_stream,
+                    length=len(json_bytes),
+                    content_type='application/json'
+                )
+                yield llm_pb2.NewMessageResponse(
+                    user_message_uid=object_name
+                )
+            except Exception as e:
+                print(f"Error uploading object: {e}")
+            yield llm_pb2.NewMessageResponse(
+                llm_message_uid=""
+            )
         except Exception as e:
             print(f"ERROR: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
