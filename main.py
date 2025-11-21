@@ -249,16 +249,14 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
 
     content = []
 
-    # Начальный текст пользователя как text, если он есть
-    if text_message:
-        content.append({"type": "text", "text": text_message})
-
     # Обработка markdown документов
     if md_docs:
         img_pattern = re.compile(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+")
         for filename, md in md_docs.items():
             if not md:
                 continue
+            if not content:
+                content.append({"type": "text", "text": "# FILES ADDED FOR CONTEXT"})
             # Гарантируем, что у нас есть текущий блок текста
             current_text = f'# FILE "{filename}" BEGIN\n'
             last_end = 0
@@ -289,9 +287,9 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
             if url:
                 content.append({"type": "image_url", "image_url": {"url": image_url_to_base64(url)}})
 
-    # Если в результате нет структурированного контента, откат к простому
-    if not content:
-        return {"role": "user", "content": text_message}, is_there_images
+    # Начальный текст пользователя как text, если он есть
+    if text_message:
+        content.append({"type": "text", "text": text_message})
 
     return {"role": "user", "content": content}, is_there_images
 
