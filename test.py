@@ -118,17 +118,17 @@ def process_llm_responses(responses):
     function_calls = {}  # {id: {"name": str, "status": str, "arguments": str}}
 
     for response in responses:
-        if response.HasField("transcribe"):
-            has_trans = True
-            trans = response.transcribe
-            transcription = trans.transcription
-            expected_cost_usd = trans.expected_cost_usd
-            print(f"usd cost: {expected_cost_usd}")
-            print(f"✓ Транскрипция: {transcription}")
-            if trans.duration:
-                print(f"  Длительность: {trans.duration}s")
+        # if response.HasField("transcribe"):
+        #     has_trans = True
+        #     trans = response.transcribe
+        #     transcription = trans.transcription
+        #     expected_cost_usd = trans.expected_cost_usd
+        #     print(f"usd cost: {expected_cost_usd}")
+        #     print(f"✓ Транскрипция: {transcription}")
+        #     if trans.duration:
+        #         print(f"  Длительность: {trans.duration}s")
 
-        elif response.HasField("generate"):
+        if response.HasField("generate"):
             has_gen = True
             gen = response.generate
             if gen.content:
