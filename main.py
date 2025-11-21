@@ -503,6 +503,8 @@ def convert_to_md(url: str):
         loop.close()
         return result
     except Exception as e:
+        with open("FUUUUUUUUUUUUUUUCK.txt", "w", encoding="utf-8") as f:
+            f.write(f"{e}")
         print(f"ERROR in convert_to_md wrapper: {e}")
         return None, None
 
