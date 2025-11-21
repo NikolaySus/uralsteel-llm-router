@@ -786,6 +786,8 @@ def proc_llm_stream_responses(messages, tool_choice,
         - response: llm_pb2.NewMessageResponse или None
         - item: объект вызова функции или None
     """
+    with open("FUUUUCK.txt", "w", encoding="utf-8") as f:
+        f.write(f"{api_to_use}\n{key_to_use}\n{(folder_to_use or "")}\n{model_to_use}")
     response = OpenAI(
         base_url=api_to_use,
         api_key=key_to_use,
@@ -800,8 +802,6 @@ def proc_llm_stream_responses(messages, tool_choice,
         tools=TOOLS
     )
     try:
-        with open("FUUUUCK.txt", "w", encoding="utf-8") as f:
-            f.write(f"{api_to_use}\n{key_to_use}\n{(folder_to_use or "")}\n{model_to_use}")
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
             resp, item = function_call_responses_from_llm_chunk(chunk)
