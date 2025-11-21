@@ -844,68 +844,56 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
         """Получить список доступных инструментов/функций."""
         return llm_pb2.StringsListResponse(strings=TOOLS_NAMES)
 
-    def NewMessage(self, request_iter, context):
-        """Метод для отправки сообщения языковой модели и получения ответа.
-        
-        request_iter — поток запросов (stream), может содержать:
-        - Одно сообщение с msg (текстовое сообщение)
-        - Несколько сообщений с mp3_chunk (потоковое аудио)
-        
-        История чата передаётся в одном из сообщений. Опциональные поля
-        text2text_model и speech2text_model переопределяют модели по умолчанию.
+    def Transcribe(self, request_iter, context):
+        """Транскрибация аудио без генерации текста.
+        Принимает поток TranscribeRequest с mp3_chunk и опциональной speech2text_model.
+        Возвращает одиночный TranscribeResponse.
         """
         try:
-            user_message = None
-            history = None
             audio_buffer = BytesIO()
-            text2text_override = None
             speech2text_override = None
-            function_tool = None
-            documents_urls = None
-            images_urls = None
-            markdown_urls = None
 
-            # Собираем все данные из потока запросов
             for request in request_iter:
-                # Извлекаем историю из первого непустого сообщения
-                if history is None and request.history:
-                    history = request.history
-
-                # Извлекаем опциональные модели из первого сообщения
-                if text2text_override is None and request.text2text_model:
-                    text2text_override = request.text2text_model
-                if speech2text_override is None and request.speech2text_model:
+                if speech2text_override is None and getattr(request, 'speech2text_model', None):
                     speech2text_override = request.speech2text_model
-                if function_tool is None and request.function:
-                    function_tool = request.function
-                if documents_urls is None and request.documents_urls:
-                    documents_urls = request.documents_urls
-                if images_urls is None and request.images_urls:
-                    images_urls = request.images_urls
-                if markdown_urls is None and request.markdown_urls:
-                    markdown_urls = request.markdown_urls
-
-                # Проверяем какой тип payload пришел
-                if request.HasField("msg"):
-                    # Текстовое сообщение
-                    user_message = request.msg
-                elif request.HasField("mp3_chunk"):
-                    # Собираем аудиочанк
+                if getattr(request, 'mp3_chunk', None):
                     audio_buffer.write(request.mp3_chunk)
 
-            # Если пришло аудио, транскрибируем его
-            if audio_buffer.tell() > 0:
-                user_message, transcribe_proto = transcribe_audio(
-                    audio_buffer,
-                    speech2text_override
+            _, transcribe_proto = transcribe_audio(audio_buffer, speech2text_override)
+            if transcribe_proto is None:
+                raise ValueError("Ни одного аудио чанка не получено для транскрибации")
+            return llm_pb2.TranscribeResponse(transcribe=transcribe_proto)
+        except Exception as e:
+            print(f"ERROR: {e}")
+            context.set_code(grpc.StatusCode.INTERNAL)
+            context.set_details(f"ERROR: {e}")
+            return llm_pb2.TranscribeResponse(
+                transcribe=llm_pb2.TranscribeResponseType(
+                    transcription="",
+                    duration=0.0,
+                    expected_cost_usd=0.0,
+                    datetime=datetime.now().strftime(DATETIME_FORMAT)
                 )
-                if transcribe_proto is not None:
-                    yield llm_pb2.NewMessageResponse(
-                        transcribe=transcribe_proto)
+            )
+
+    def NewMessage(self, request, context):
+        """Метод для отправки сообщения языковой модели и получения ответа.
+        
+        request — одиночный запрос NewMessageRequest (только текст и опции).
+        """
+        try:
+            # Извлекаем поля из одиночного запроса
+            user_message = request.msg
+            history = request.history if request.history else []
+            text2text_override = request.text2text_model if request.text2text_model else None
+            function_tool = request.function if request.function else None
+            documents_urls = request.documents_urls if request.documents_urls else None
+            images_urls = request.images_urls if request.images_urls else None
+            markdown_urls = request.markdown_urls if request.markdown_urls else None
 
             # Если сообщение пусто, ошибка
             if not user_message:
-                raise ValueError("Ни текст сообщения, ни аудио не получены")
+                raise ValueError("Текст сообщения не получен")
 
             # История по умолчанию пуста
             if history is None:

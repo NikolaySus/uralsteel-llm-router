@@ -290,7 +290,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"AvailableModelsSpeech2Text failed: {e}")
-        comment = '''
+
     def test_04_new_message_text_no_history(self):
         """Тест 4: NewMessage с текстовым сообщением без истории -
            требует авторизацию."""
@@ -298,13 +298,11 @@ class TestLlmService(unittest.TestCase):
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        def request_generator():
-            yield llm_pb2.NewMessageRequest(msg=TEST_MESSAGE)
-
         try:
             # Передаём авторизационный заголовок
-            responses = stub.NewMessage(request_generator(),
-                                        metadata=get_metadata())
+            responses = stub.NewMessage(
+                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE),
+                metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc = \
                 process_llm_responses(responses)
@@ -339,16 +337,14 @@ class TestLlmService(unittest.TestCase):
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        def request_generator():
-            yield llm_pb2.NewMessageRequest(
-                msg=TEST_MESSAGE_WITH_HISTORY,
-                history=TEST_HISTORY
-            )
-
         try:
             # Передаём авторизационный заголовок
-            responses = stub.NewMessage(request_generator(),
-                                        metadata=get_metadata())
+            responses = stub.NewMessage(
+                llm_pb2.NewMessageRequest(
+                    msg=TEST_MESSAGE_WITH_HISTORY,
+                    history=TEST_HISTORY
+                ),
+                metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc = \
                 process_llm_responses(responses)
@@ -375,8 +371,8 @@ class TestLlmService(unittest.TestCase):
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with history failed: {e}")
 
-    def test_06_new_message_audio_no_history(self):
-        """Тест 6: NewMessage с потоком mp3 чанков без истории -
+    def test_06_transcribe_audio_no_history(self):
+        """Тест 6: Transcribe с потоком mp3 чанков без истории -
            требует авторизацию."""
         print(f"\nMP3 файл: {TEST_MP3_FILE}")
 
@@ -393,44 +389,21 @@ class TestLlmService(unittest.TestCase):
                     chunk = mp3_file.read(chunk_size)
                     if not chunk:
                         break
-                    yield llm_pb2.NewMessageRequest(mp3_chunk=chunk)
+                    yield llm_pb2.TranscribeRequest(mp3_chunk=chunk)
 
         try:
-            # Передаём авторизационный заголовок
-            responses = stub.NewMessage(request_generator(),
-                                        metadata=get_metadata())
-
-            has_trans, has_gen, has_complete, trans, content, reasoning, fc = \
-                process_llm_responses(responses)
-
-            print("\nРезультаты:")
-            print(f"  - Получены TranscribeResponseType: {has_trans}")
-            print(f"  - Получены GenerateResponseType: {has_gen}")
-            print(f"  - Получены CompleteResponseType: {has_complete}")
-            if trans:
-                print(f"  - Транскрипция: {trans}")
-            if content:
-                print(f"  - Content: {content}")
-            if reasoning:
-                print(f"  - Reasoning: {reasoning}")
-            if fc:
-                print(f"  - Вызовы функций: {len(fc)}")
-                for func_id, func_info in fc.items():
-                    print(f"    * {func_info['name']} (id={func_id}): "
-                          f"status={func_info['status']}")
-
-            self.assertTrue(has_trans or has_gen or has_complete,
-                            "Не получены ответы от сервера")
+            resp = stub.Transcribe(request_generator(), metadata=get_metadata())
+            self.assertTrue(resp.HasField('transcribe'))
+            print(f"✓ Транскрипция: {resp.transcribe.transcription}")
 
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
-            self.fail(f"NewMessage audio no history failed: {e}")
+            self.fail(f"Transcribe audio no history failed: {e}")
 
-    def test_07_new_message_audio_with_history(self):
-        """Тест 7: NewMessage с потоком mp3 чанков и историей -
+    def test_07_transcribe_audio_with_model_override(self):
+        """Тест 7: Transcribe с потоком mp3 чанков и указанием модели -
            требует авторизацию."""
         print(f"\nMP3 файл: {TEST_MP3_FILE}")
-        print(f"История: {len(TEST_HISTORY)} сообщений")
 
         if not os.path.exists(TEST_MP3_FILE):
             print(f"⚠ Файл {TEST_MP3_FILE} не найден, пропускаем тест")
@@ -440,51 +413,29 @@ class TestLlmService(unittest.TestCase):
 
         def request_generator():
             chunk_size = 4096
-            first_chunk = True
+            sent_model = False
             with open(TEST_MP3_FILE, 'rb') as mp3_file:
                 while True:
                     chunk = mp3_file.read(chunk_size)
                     if not chunk:
                         break
-                    if first_chunk:
-                        yield llm_pb2.NewMessageRequest(
+                    if not sent_model and os.environ.get('INFERENCE_API_OPENAI_MODEL', ''):
+                        yield llm_pb2.TranscribeRequest(
                             mp3_chunk=chunk,
-                            history=TEST_HISTORY
+                            speech2text_model=os.environ['INFERENCE_API_OPENAI_MODEL']
                         )
-                        first_chunk = False
+                        sent_model = True
                     else:
-                        yield llm_pb2.NewMessageRequest(mp3_chunk=chunk)
+                        yield llm_pb2.TranscribeRequest(mp3_chunk=chunk)
 
         try:
-            # Передаём авторизационный заголовок
-            responses = stub.NewMessage(request_generator(),
-                                        metadata=get_metadata())
-
-            has_trans, has_gen, has_complete, trans, content, reasoning, fc = \
-                process_llm_responses(responses)
-
-            print("\nРезультаты:")
-            print(f"  - Получены TranscribeResponseType: {has_trans}")
-            print(f"  - Получены GenerateResponseType: {has_gen}")
-            print(f"  - Получены CompleteResponseType: {has_complete}")
-            if trans:
-                print(f"  - Транскрипция: {trans}")
-            if content:
-                print(f"  - Content: {content}")
-            if reasoning:
-                print(f"  - Reasoning: {reasoning}")
-            if fc:
-                print(f"  - Вызовы функций: {len(fc)}")
-                for func_id, func_info in fc.items():
-                    print(f"    * {func_info['name']} (id={func_id}): "
-                          f"status={func_info['status']}")
-
-            self.assertTrue(has_trans or has_gen or has_complete,
-                            "Не получены ответы от сервера")
+            resp = stub.Transcribe(request_generator(), metadata=get_metadata())
+            self.assertTrue(resp.HasField('transcribe'))
+            print(f"✓ Транскрипция: {resp.transcribe.transcription}")
 
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
-            self.fail(f"NewMessage audio with history failed: {e}")
+            self.fail(f"Transcribe audio with model override failed: {e}")
 
     def test_08_available_models_text2text_without_auth(self):
         """Тест 8: AvailableModelsText2Text ДОЛЖЕН ОТКЛОНИТЬ запрос БЕЗ
@@ -554,16 +505,14 @@ class TestLlmService(unittest.TestCase):
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        def request_generator():
-            yield llm_pb2.NewMessageRequest(
-                msg=TEST_MESSAGE_WITH_HISTORY,
-                function="websearch"
-            )
-
         try:
-            # Передаём авторизационный заголовок
-            responses = stub.NewMessage(request_generator(),
-                                        metadata=get_metadata())
+            # Передаём авториза��ионный заголовок
+            responses = stub.NewMessage(
+                llm_pb2.NewMessageRequest(
+                    msg=TEST_MESSAGE_WITH_HISTORY,
+                    function="websearch"
+                ),
+                metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc = \
                 process_llm_responses(responses)
@@ -598,16 +547,14 @@ class TestLlmService(unittest.TestCase):
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        def request_generator():
-            yield llm_pb2.NewMessageRequest(
-                msg=TEST_MESSAGE_IMAGE_GEN,
-                function="image_gen"
-            )
-
         try:
             # Передаём авторизационный заголовок
-            responses = stub.NewMessage(request_generator(),
-                                        metadata=get_metadata())
+            responses = stub.NewMessage(
+                llm_pb2.NewMessageRequest(
+                    msg=TEST_MESSAGE_IMAGE_GEN,
+                    function="image_gen"
+                ),
+                metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc = \
                 process_llm_responses(responses)
@@ -633,7 +580,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with image_gen failed: {e}")
-'''
+
     def test_12_new_message_with_docs_and_images(self):
         """Тест 12: проверяет обработку documents_urls и images_urls.
         - Не передаёт history
@@ -656,16 +603,13 @@ class TestLlmService(unittest.TestCase):
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
-        def request_generator():
-            yield llm_pb2.NewMessageRequest(
-                msg="Проанализируй документ и учти картинку в ответе.",
-                text2text_model=OPENAIVLM_MODEL,
-                documents_urls=[TEST_DOCX_URL],
-                images_urls=[TEST_IMAGE_URL],
-            )
-
         try:
-            responses = stub.NewMessage(request_generator(), metadata=get_metadata())
+            responses = stub.NewMessage(
+                llm_pb2.NewMessageRequest(msg="Проанализируй документ и учти картинку в ответе.",
+                                          text2text_model=OPENAIVLM_MODEL,
+                                          documents_urls=[TEST_DOCX_URL],
+                                          images_urls=[TEST_IMAGE_URL]),
+                metadata=get_metadata())
 
             chat_name_seen = False
             md_chunks_by_name = {}
