@@ -792,7 +792,7 @@ def responses_from_llm_chunk(chunk):
         ), delta_content
     else:
         # Не удалось разобрать часть ответа
-        print(f"WARN: {chunk}")
+        # print(f"WARN: {chunk}")
         return None, None
 
 
