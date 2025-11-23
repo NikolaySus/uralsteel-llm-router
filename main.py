@@ -194,14 +194,25 @@ class AuthInterceptor(grpc.ServerInterceptor):
         if secret_from_header != SECRET_KEY:
             # Секретный ключ неверен - отклоняем запрос
             print(f"UNAUTHORIZED: bad SECRET_KEY for method {method_name}")
-            # Создаём обработчик ошибки
-            abort_handler = grpc.unary_unary_rpc_method_handler(
-                lambda request, context: context.abort(
-                    grpc.StatusCode.UNAUTHENTICATED,
-                    "Invalid or missing authorization"
-                )
+            # Возвращаем обработчик, который всегда абортит вызов
+            def abort_unary_unary(request, context):
+                context.abort(grpc.StatusCode.UNAUTHENTICATED,
+                              "Invalid or missing authorization")
+
+            def abort_unary_stream(request, context):
+                context.abort(grpc.StatusCode.UNAUTHENTICATED,
+                              "Invalid or missing authorization")
+                if False:
+                    yield  # pragma: no cover
+
+            return grpc.RpcMethodHandler(
+                request_streaming=False,
+                response_streaming=False,
+                unary_unary=abort_unary_unary,
+                unary_stream=None,
+                stream_unary=None,
+                stream_stream=None,
             )
-            return abort_handler(None, handler_call_details)
 
         # Секретный ключ верен - пропускаем запрос дальше
         return continuation(handler_call_details)
