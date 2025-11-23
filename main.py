@@ -982,6 +982,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     user_message_uid=object_name
                 )
+                print(f"Put user message: {object_name}")
             except Exception as e:
                 print(f"Error uploading object: {e}")
 
@@ -1094,11 +1095,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     llm_message_uid=object_name_2
                 )
+                print(f"Put llm message: {object_name_2}")
             except Exception as e:
                 print(f"Error uploading object: {e}")
-            yield llm_pb2.NewMessageResponse(
-                llm_message_uid=""
-            )
         except Exception as e:
             print(f"ERROR: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
