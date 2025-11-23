@@ -646,9 +646,11 @@ def function_call_responses_from_llm_chunk(chunk):
     - .output_item.done: завершение вызова функции (FunctionCallComplete)
     """
     if hasattr(chunk, "type"):
+        print("WARN: type")
         chunk_type = chunk.type
         # Обработка события начала вызова функции
         if chunk_type == "response.output_item.added":
+            print("WARN: added")
             if hasattr(chunk, "item") and hasattr(chunk.item, "type"):
                 if chunk.item.type == "function_call":
                     item = chunk.item
@@ -663,6 +665,7 @@ def function_call_responses_from_llm_chunk(chunk):
                         ), None
         # Обработка события промежуточных аргументов функции
         elif chunk_type == "response.function_call_arguments.delta":
+            print("WARN: delta")
             if hasattr(chunk, "delta") and hasattr(chunk, "item_id"):
                 delta = chunk.delta
                 func_id = chunk.item_id
@@ -674,6 +677,7 @@ def function_call_responses_from_llm_chunk(chunk):
                 ), None
         # Обработка события завершения аргументов функции
         elif chunk_type == "response.function_call_arguments.done":
+            print("WARN: arguments")
             if hasattr(chunk, "arguments") and hasattr(chunk, "item_id"):
                 arguments = chunk.arguments
                 func_id = chunk.item_id
@@ -685,6 +689,7 @@ def function_call_responses_from_llm_chunk(chunk):
                 ), None
         # Обработка события завершения вызова функции
         elif chunk_type == "response.output_item.done":
+            print("WARN: item")
             if hasattr(chunk, "item") and hasattr(chunk.item, "type"):
                 if chunk.item.type == "function_call":
                     item = chunk.item
