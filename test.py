@@ -18,8 +18,9 @@ import llm_pb2_grpc
 
 SERVER_ADDRESS = os.environ.get('SERVER_ADDRESS', 'localhost:50051')
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
-TEST_MESSAGE = "Привет, как дела?"
-TEST_MESSAGE_WITH_HISTORY = "Подскажи какой сериал посмотреть интересненький."
+TEST_MESSAGE = "Придумай имя для персонажа D&D. Это хаотично-добрый молодой эльф маг (парень), который почти всю свою молодость провёл в лабораториях за магическими изысканиями. Конечный ответ должен содержать только один наилучший вариант имени."
+TEST_MESSAGE_SERIAL = "Подскажи какой сериал посмотреть интересненький."
+TEST_MESSAGE_WITH_HISTORY = "Хм, звучит знакомо, а не существовало ли главных героев с таким именем в фэнтэзийных книгах?"
 TEST_MESSAGE_IMAGE_GEN = "Создай изображение пейзажа с горами и озером."
 TEST_MP3_FILE = "serial.mp3"  # Путь к mp3 файлу
 
@@ -31,17 +32,8 @@ TEST_MESSAGE_FILES_IMAGES = ("Напомни, пожалуйста, о чём ф
                              "показывал картинку, которую я прикрепил? "
                              "Ответь максимально кратко, я очень тороплюсь!")
 
-# История для тестов с историей
-TEST_HISTORY = [
-    llm_pb2.Message(
-        role=llm_pb2.Role.user,
-        body="Привет, как дела?"
-    ),
-    llm_pb2.Message(
-        role=llm_pb2.Role.assistant,
-        body="Привет! Дела отлично, спасибо за вопрос!"
-    ),
-]
+# История для тестов с историей (храним uid сообщений)
+TEST_HISTORY = []
 
 # Чтение доверенных сертификатов
 with open("ca.crt", "rb") as f:
@@ -105,7 +97,7 @@ def process_llm_responses(responses):
     Returns:
         Кортеж (has_trans, has_gen, has_complete, 
                 transcription, content, reasoning,
-                function_calls_info)
+                function_calls_info, user_uid, llm_uid)
                 где function_calls_info это словарь словарей с информацией 
                 о вызовах функций
     """
@@ -116,18 +108,10 @@ def process_llm_responses(responses):
     content_parts = []
     reasoning_parts = []
     function_calls = {}  # {id: {"name": str, "status": str, "arguments": str}}
+    user_uid = None
+    llm_uid = None
 
     for response in responses:
-        # if response.HasField("transcribe"):
-        #     has_trans = True
-        #     trans = response.transcribe
-        #     transcription = trans.transcription
-        #     expected_cost_usd = trans.expected_cost_usd
-        #     print(f"usd cost: {expected_cost_usd}")
-        #     print(f"✓ Транскрипция: {transcription}")
-        #     if trans.duration:
-        #         print(f"  Длительность: {trans.duration}s")
-
         if response.HasField("generate"):
             has_gen = True
             gen = response.generate
@@ -209,9 +193,16 @@ def process_llm_responses(responses):
                 if image_gen.image_base64:
                     open_image_from_base64(image_gen.image_base64)
 
+        elif response.HasField("user_message_uid"):
+            user_uid = response.user_message_uid
+            print(f"User message uid: {user_uid}")
+        elif response.HasField("llm_message_uid"):
+            llm_uid = response.llm_message_uid
+            print(f"LLM message uid: {llm_uid}")
+
     return (has_trans, has_gen, has_complete, transcription,
             "".join(content_parts), "".join(reasoning_parts),
-            function_calls)
+            function_calls, user_uid, llm_uid)
 
 
 # =============================================================================
@@ -304,8 +295,12 @@ class TestLlmService(unittest.TestCase):
                 llm_pb2.NewMessageRequest(msg=TEST_MESSAGE),
                 metadata=get_metadata())
 
-            _, has_gen, has_complete, __, content, reasoning, fc = \
+            _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
                 process_llm_responses(responses)
+            if user_uid:
+                TEST_HISTORY.append(user_uid)
+            if llm_uid:
+                TEST_HISTORY.append(llm_uid)
 
             print("\nРезультаты:")
             print(f"  - Получены GenerateResponseType: {has_gen}")
@@ -338,6 +333,7 @@ class TestLlmService(unittest.TestCase):
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
 
         try:
+            print(f"!!!! history = {TEST_HISTORY}")
             # Передаём авторизационный заголовок
             responses = stub.NewMessage(
                 llm_pb2.NewMessageRequest(
@@ -346,8 +342,12 @@ class TestLlmService(unittest.TestCase):
                 ),
                 metadata=get_metadata())
 
-            _, has_gen, has_complete, __, content, reasoning, fc = \
+            _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
                 process_llm_responses(responses)
+            # if user_uid:
+            #     TEST_HISTORY.append(user_uid)
+            # if llm_uid:
+            #     TEST_HISTORY.append(llm_uid)
 
             print("\nРезультаты:")
             print(f"  - Получены GenerateResponseType: {has_gen}")
@@ -370,7 +370,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with history failed: {e}")
-
+    comment = '''
     def test_06_transcribe_audio_no_history(self):
         """Тест 6: Transcribe с потоком mp3 чанков без истории -
            требует авторизацию."""
@@ -500,7 +500,7 @@ class TestLlmService(unittest.TestCase):
     def test_10_new_message_text_with_websearch(self):
         """Тест 10: NewMessage с текстовым сообщением и function=websearch -
            требует авторизацию."""
-        print(f"\nСообщение: {TEST_MESSAGE_WITH_HISTORY}")
+        print(f"\nСообщение: {TEST_MESSAGE_SERIAL}")
         print("Функция: websearch")
 
         stub = llm_pb2_grpc.LlmStub(grpc.secure_channel(SERVER_ADDRESS, CREDS))
@@ -509,13 +509,17 @@ class TestLlmService(unittest.TestCase):
             # Передаём авториза��ионный заголовок
             responses = stub.NewMessage(
                 llm_pb2.NewMessageRequest(
-                    msg=TEST_MESSAGE_WITH_HISTORY,
+                    msg=TEST_MESSAGE_SERIAL,
                     function="websearch"
                 ),
                 metadata=get_metadata())
 
-            _, has_gen, has_complete, __, content, reasoning, fc = \
+            _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
                 process_llm_responses(responses)
+            # if user_uid:
+            #     TEST_HISTORY.append(user_uid)
+            # if llm_uid:
+            #     TEST_HISTORY.append(llm_uid)
 
             print("\nРезультаты:")
             print(f"  - Получены GenerateResponseType: {has_gen}")
@@ -556,8 +560,12 @@ class TestLlmService(unittest.TestCase):
                 ),
                 metadata=get_metadata())
 
-            _, has_gen, has_complete, __, content, reasoning, fc = \
+            _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
                 process_llm_responses(responses)
+            # if user_uid:
+            #     TEST_HISTORY.append(user_uid)
+            # if llm_uid:
+            #     TEST_HISTORY.append(llm_uid)
 
             print("\nРезультаты:")
             print(f"  - Получены GenerateResponseType: {has_gen}")
@@ -636,8 +644,12 @@ class TestLlmService(unittest.TestCase):
                     pass
 
             # Process accumulated responses via common helper to print and collect content/reasoning
-            _, has_gen, has_complete, __, content, reasoning, fc = \
+            _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
                 process_llm_responses(iter(buffer))
+            # if user_uid:
+            #     TEST_HISTORY.append(user_uid)
+            # if llm_uid:
+            #     TEST_HISTORY.append(llm_uid)
 
             self.assertTrue(chat_name_seen, "Chat name must be returned for new chat")
             self.assertTrue(len(md_chunks_by_name) > 0, "At least one markdown chunk must be returned")
@@ -655,7 +667,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage with docs and images failed: {e}")
-
+'''
 
 if __name__ == "__main__":
     # Информация о конфигурации

@@ -525,7 +525,7 @@ def generate_chat_name(user_message: str):
                 "chat names based on the user's initial message. The name "
                 "should be brief (4 words max), descriptive, and in the "
                 "same language as the user message. Return only the name, "
-                "nothing else."
+                "nothing else. You must NOT answer questions, just summarize."
             )
         },
         {
@@ -1069,7 +1069,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             else:
                 print("Client cancelled, stopping stream.")
 
-            object_name = str(uuid.uuid4())
+            object_name_2 = str(uuid.uuid4())
             if meta is not None and hasattr(meta, "image_gen") and meta.image_gen.image_base64:
                 content = [
                     {
@@ -1081,18 +1081,18 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         "image_url": { "url": meta.image_gen.image_base64 }
                     }
                 ]
-            json_bytes = json.dumps({"role": "assistant", "content": content}).encode('utf-8')
-            data_stream = BytesIO(json_bytes)
+            json_bytes_2 = json.dumps({"role": "assistant", "content": content}).encode('utf-8')
+            data_stream_2 = BytesIO(json_bytes_2)
             try:
                 minio_client.put_object(
                     BUCKET_NAME,
-                    object_name,
-                    data_stream,
-                    length=len(json_bytes),
+                    object_name_2,
+                    data_stream_2,
+                    length=len(json_bytes_2),
                     content_type='application/json'
                 )
                 yield llm_pb2.NewMessageResponse(
-                    user_message_uid=object_name
+                    llm_message_uid=object_name_2
                 )
             except Exception as e:
                 print(f"Error uploading object: {e}")
