@@ -412,12 +412,14 @@ def websearch(query: str):
         print(results)
     except Exception as e:
         results = f"An error occurred during search request: {e}"
-    url_list = [result["url"]
-                for result
-                in results] if isinstance(results, list) else []
     return results, llm_pb2.ToolMetadataResponse(
         websearch=llm_pb2.ToolWebSearchMetadata(
-            url_list=url_list
+            item=[llm_pb2.ToolWebSearchMetadataItem(
+                    url=result["url"],
+                    title=result["title"]
+                )
+                for result
+                in results] if isinstance(results, list) else []
         )
     )
 
