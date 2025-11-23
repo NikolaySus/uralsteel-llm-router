@@ -452,6 +452,7 @@ def image_gen(query: str):
 
 def call_function(name, args):
     """Вызов функции инструмента по имени с аргументами args."""
+    print(f"Calling {name} with:\n{args}")
     if name == "websearch":
         result, meta = websearch(**args)
         return json.dumps(result,
