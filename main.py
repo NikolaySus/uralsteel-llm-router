@@ -293,6 +293,7 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
     if images_urls:
         for url in images_urls:
             if url:
+                is_there_images = True
                 content.append({"type": "image_url", "image_url": {"url": image_url_to_base64(url)}})
 
     # Начальный текст пользователя как text, если он есть
