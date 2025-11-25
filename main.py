@@ -595,7 +595,8 @@ def build_messages_from_history(history, user_message: str,
             "You can use the **websearch** tool for relevant information "
             "retrieval and **image_gen** for image generation. "
             "**Do not insert any links or images in your answers. Respond in "
-            "the same language as the user using MarkDown markup language**."
+            "the same language as the user using MarkDown markup language. "
+            "If tool output is provided, ALWAYS base your answer on it.**"
         )
     }]
     if history:
@@ -637,7 +638,7 @@ def change_model_msgs():
                 )
             )]
 
-def function_call_responses_from_llm_chunk(chunk):
+def function_call_responses_from_llm_chunk(chunk, id="", name="", args=""):
     """Преобразует один элемент потока ответа LLM с функцией в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     
@@ -647,103 +648,78 @@ def function_call_responses_from_llm_chunk(chunk):
     - .function_call_arguments.done: завершенные аргументы (FunctionCallDone)
     - .output_item.done: завершение вызова функции (FunctionCallComplete)
     """
-    if hasattr(chunk, "type"):
-        print("WARN: type")
-        chunk_type = chunk.type
-        # Обработка события начала вызова функции
-        if chunk_type == "response.output_item.added":
-            print("WARN: added")
-            if hasattr(chunk, "item") and hasattr(chunk.item, "type"):
-                if chunk.item.type == "function_call":
-                    item = chunk.item
-                    func_id = getattr(item, "id", "")
-                    func_name = getattr(item, "name", "")
-                    if func_id and func_name:
-                        return llm_pb2.NewMessageResponse(
-                            function_call_added=llm_pb2.FunctionCallAdded(
-                                id=func_id,
-                                name=func_name
-                            )
-                        ), None
-        # Обработка события промежуточных аргументов функции
-        elif chunk_type == "response.function_call_arguments.delta":
-            print("WARN: delta")
-            if hasattr(chunk, "delta") and hasattr(chunk, "item_id"):
-                delta = chunk.delta
-                func_id = chunk.item_id
-                return llm_pb2.NewMessageResponse(
-                    function_call_delta=llm_pb2.FunctionCallDelta(
-                        id=func_id,
-                        content=delta
-                    )
-                ), None
-        # Обработка события завершения аргументов функции
-        elif chunk_type == "response.function_call_arguments.done":
-            print("WARN: arguments")
-            if hasattr(chunk, "arguments") and hasattr(chunk, "item_id"):
-                arguments = chunk.arguments
-                func_id = chunk.item_id
-                return llm_pb2.NewMessageResponse(
-                    function_call_done=llm_pb2.FunctionCallDone(
-                        id=func_id,
-                        arguments=arguments
-                    )
-                ), None
-        # Обработка события завершения вызова функции
-        elif chunk_type == "response.output_item.done":
-            print("WARN: item")
-            if hasattr(chunk, "item") and hasattr(chunk.item, "type"):
-                if chunk.item.type == "function_call":
-                    item = chunk.item
-                    func_id = getattr(item, "id", "")
-                    func_name = getattr(item, "name", "")
-                    # Получаем аргументы
-                    arguments = ""
-                    if hasattr(item, "arguments"):
-                        arguments = item.arguments
-                    if func_id and func_name:
-                        return llm_pb2.NewMessageResponse(
-                            function_call_complete=llm_pb2.FunctionCallComplete(
-                                id=func_id,
-                                name=func_name,
-                                arguments=arguments
-                            )
-                        ), item
-    # Обработка события завершения вызова функции из choices[0]
-    elif hasattr(chunk, "object") and (
+    if hasattr(chunk, "object") and (
         chunk.object == "chat.completion.chunk" and
         hasattr(chunk, "choices") and chunk.choices):
+        print("WARN: object")
         choice0 = chunk.choices[0]
         delta = getattr(choice0, "delta", None)
-        if delta and hasattr(delta, "tool_calls") and delta.tool_calls:
-            for tool_call in delta.tool_calls:
-                if hasattr(tool_call, "id") and hasattr(tool_call,
-                                                        "function"):
-                    func_id = tool_call.id
-                    func = tool_call.function
-                    func_name = getattr(func, "name", "")
-                    arguments = getattr(func, "arguments", "")
-                    if func_id and func_name:
-                        return llm_pb2.NewMessageResponse(
-                            function_call_complete=llm_pb2.FunctionCallComplete(
-                                id=func_id,
-                                name=func_name,
-                                arguments=arguments
-                            )
-                        ), {
-                            "role": "assistant",
-                            "tool_calls": [
-                                {
-                                "id": f"{chunk.id}-{func_id}",
-                                "type": "function",
-                                "function": {
-                                    "name": func_name,
-                                    "arguments": arguments
-                                }
-                                }
-                            ]
+        if delta and hasattr(delta, "tool_calls"):
+            finish_reason = getattr(choice0, "finish_reason", None)
+            if delta.tool_calls is not None and delta.tool_calls:
+                for tool_call in delta.tool_calls:
+                    if hasattr(tool_call, "id") and hasattr(tool_call,
+                                                            "function"):
+                        func_id = tool_call.id
+                        func = tool_call.function
+                        func_name = getattr(func, "name", "")
+                        arguments = getattr(func, "arguments", "")
+                        if func_id and func_name:
+                            if finish_reason is None:
+                                return llm_pb2.NewMessageResponse(
+                                    function_call_added=llm_pb2.FunctionCallAdded(
+                                        id=func_id,
+                                        name=func_name
+                                    )
+                                ), None, func_id, func_name, ""
+                            return llm_pb2.NewMessageResponse(
+                                function_call_complete=llm_pb2.FunctionCallComplete(
+                                    id=func_id,
+                                    name=func_name,
+                                    arguments=arguments
+                                )
+                            ), {
+                                "role": "assistant",
+                                "tool_calls": [
+                                    {
+                                    "id": f"{chunk.id}-{func_id}",
+                                    "type": "function",
+                                    "function": {
+                                        "name": func_name,
+                                        "arguments": arguments
+                                    }
+                                    }
+                                ]
+                            }, None, None, None
+                        else:
+                            args += arguments
+                            return llm_pb2.NewMessageResponse(
+                                function_call_delta=llm_pb2.FunctionCallDelta(
+                                    id=id,
+                                    content=arguments
+                                )
+                            ), None, id, name, args
+            elif delta.tool_calls is None and finish_reason == 'tool_calls':
+                return llm_pb2.NewMessageResponse(
+                    function_call_complete=llm_pb2.FunctionCallComplete(
+                        id=id,
+                        name=name,
+                        arguments=args
+                    )
+                ), {
+                    "role": "assistant",
+                    "tool_calls": [
+                        {
+                        "id": id,
+                        "type": "function",
+                        "function": {
+                            "name": name,
+                            "arguments": args
                         }
-    return None, None
+                        }
+                    ]
+                }, None, None, None
+    return None, None, None, None, None
 
 
 def responses_from_llm_chunk(chunk):
@@ -828,9 +804,12 @@ def proc_llm_stream_responses(messages, tool_choice,
         tools=TOOLS
     )
     try:
+        id = ""
+        name = ""
+        args = ""
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
-            resp, item = function_call_responses_from_llm_chunk(chunk)
+            resp, item, id, name, args = function_call_responses_from_llm_chunk(chunk, id, name, args)
             delta_content = None
             if resp is None:
                 resp, delta_content = responses_from_llm_chunk(chunk)
