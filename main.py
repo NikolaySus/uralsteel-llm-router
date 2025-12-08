@@ -625,6 +625,7 @@ def build_messages_from_history(history, user_message: str,
                 print(f"Error getting object from MinIO: {e}")
             except json.JSONDecodeError as e:
                 print(f"Error decoding JSON: {e}")
+            print(f"Get one message: {message_uuid}")
     messages.append(user_message)
     return messages
 
@@ -662,7 +663,7 @@ def function_call_responses_from_llm_chunk(chunk, id="", name="", args=""):
     if hasattr(chunk, "object") and (
         chunk.object == "chat.completion.chunk" and
         hasattr(chunk, "choices") and chunk.choices):
-        print("WARN: object")
+        # print("WARN: object")
         choice0 = chunk.choices[0]
         delta = getattr(choice0, "delta", None)
         if delta and hasattr(delta, "tool_calls"):
