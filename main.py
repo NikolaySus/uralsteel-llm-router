@@ -755,14 +755,14 @@ def responses_from_llm_chunk(chunk, summ, sumr):
     completion_tokens = None
     prompt_tokens = None
     total_tokens = None
+    completion_tokens_fix = sumr / USAGE_FIX
+    prompt_tokens_fix = summ / USAGE_FIX
+    total_tokens_fix = completion_tokens_fix + prompt_tokens_fix
     if hasattr(chunk, "usage") and chunk.usage:
         usage = chunk.usage
-        completion_tokens_fix = sumr / USAGE_FIX
-        prompt_tokens_fix = summ / USAGE_FIX
-        total_tokens_fix = completion_tokens_fix + prompt_tokens_fix
-        completion_tokens = getattr(usage, "completion_tokens", completion_tokens_fix)
-        prompt_tokens = getattr(usage, "prompt_tokens", prompt_tokens_fix)
-        total_tokens = getattr(usage, "total_tokens", total_tokens_fix)
+        completion_tokens = getattr(usage, "completion_tokens", None)
+        prompt_tokens = getattr(usage, "prompt_tokens", None)
+        total_tokens = getattr(usage, "total_tokens", None)
 
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
     if (finish_reason == "stop" and delta_content is None) or (
@@ -770,11 +770,11 @@ def responses_from_llm_chunk(chunk, summ, sumr):
             prompt_tokens is not None and completion_tokens is not None)):
         return llm_pb2.NewMessageResponse(
             complete=llm_pb2.CompleteResponseType(
-                prompt_tokens=(prompt_tokens or 0),
-                completion_tokens=(completion_tokens or 0),
-                total_tokens=(total_tokens or 0),
+                prompt_tokens=(prompt_tokens or prompt_tokens_fix),
+                completion_tokens=(completion_tokens or completion_tokens_fix),
+                total_tokens=(total_tokens or total_tokens_fix),
                 expected_cost_usd=ALL_API_VARS["yandexai"]["price_coef"] *
-                                  (total_tokens or 0),
+                                  (total_tokens or total_tokens_fix),
                 datetime=datetime.now().strftime(DATETIME_FORMAT)
             )
         ), None

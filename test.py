@@ -293,7 +293,7 @@ class TestLlmService(unittest.TestCase):
         try:
             # Передаём авторизационный заголовок
             responses = stub.NewMessage(
-                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE),
+                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE, text2text_model="gpt-5.1"),
                 metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
