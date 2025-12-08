@@ -418,7 +418,7 @@ def websearch(query: str):
             include_favicon=False
         )
         results = response["results"]
-        print(results)
+        # print(results)
     except Exception as e:
         results = f"An error occurred during search request: {e}"
     return results, llm_pb2.ToolMetadataResponse(
@@ -620,12 +620,13 @@ def build_messages_from_history(history, user_message: str,
         )
         for message_uuid in history:
             try:
-                messages.append(json.loads(minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8')))
+                tmps = json.loads(minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8'))
+                messages.append(tmps)
             except S3Error as e:
                 print(f"Error getting object from MinIO: {e}")
             except json.JSONDecodeError as e:
                 print(f"Error decoding JSON: {e}")
-            print(f"Get one message: {message_uuid}")
+            print(f"Get one message: {tmps[:420]}")
     messages.append(user_message)
     return messages
 
@@ -983,7 +984,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 secure=True
             )
             object_name = str(uuid.uuid4())
-            json_bytes = json.dumps(user_message).encode('utf-8')
+            tmps = json.dumps(user_message)
+            json_bytes = tmps.encode('utf-8')
             data_stream = BytesIO(json_bytes)
             try:
                 minio_client.put_object(
@@ -996,7 +998,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     user_message_uid=object_name
                 )
-                print(f"Put user message: {object_name}")
+                print(f"Put user message: {tmps[:420]}")
             except Exception as e:
                 print(f"Error uploading object: {e}")
 
@@ -1106,7 +1108,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         "image_url": { "url": meta.image_gen.image_base64 }
                     }
                 ]
-            json_bytes_2 = json.dumps({"role": "assistant", "content": content}).encode('utf-8')
+            tmps = json.dumps({"role": "assistant", "content": content})
+            json_bytes_2 = tmps.encode('utf-8')
             data_stream_2 = BytesIO(json_bytes_2)
             try:
                 minio_client.put_object(
@@ -1119,7 +1122,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     llm_message_uid=object_name_2
                 )
-                print(f"Put llm message: {object_name_2}")
+                print(f"Put llm message: {tmps[:420]}")
             except Exception as e:
                 print(f"Error uploading object: {e}")
         except Exception as e:
