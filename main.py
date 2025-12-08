@@ -85,6 +85,7 @@ SYS_PROMPT_ADD = (
     "- You MUST NOT perform or engage in roleplay, impersonation, fictional personas, character acting, or simulated dialogues where you pretend to be someone or something else. "
     "Always answer as yourself: a neutral, factual, helpful assistant.\n"
 )
+USAGE_FIX = 3.6
 # Инструменты для моделей с поддержкой функций
 TOOLS = [
     {
@@ -732,7 +733,7 @@ def function_call_responses_from_llm_chunk(chunk, id="", name="", args=""):
     return None, None, None, None, None
 
 
-def responses_from_llm_chunk(chunk):
+def responses_from_llm_chunk(chunk, summ, sumr):
     """Преобразует один элемент потока ответа LLM в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     """
@@ -756,9 +757,12 @@ def responses_from_llm_chunk(chunk):
     total_tokens = None
     if hasattr(chunk, "usage") and chunk.usage:
         usage = chunk.usage
-        completion_tokens = getattr(usage, "completion_tokens", None)
-        prompt_tokens = getattr(usage, "prompt_tokens", None)
-        total_tokens = getattr(usage, "total_tokens", None)
+        completion_tokens_fix = sumr / USAGE_FIX
+        prompt_tokens_fix = summ / USAGE_FIX
+        total_tokens_fix = completion_tokens_fix + prompt_tokens_fix
+        completion_tokens = getattr(usage, "completion_tokens", completion_tokens_fix)
+        prompt_tokens = getattr(usage, "prompt_tokens", prompt_tokens_fix)
+        total_tokens = getattr(usage, "total_tokens", total_tokens_fix)
 
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
     if (finish_reason == "stop" and delta_content is None) or (
@@ -790,7 +794,7 @@ def responses_from_llm_chunk(chunk):
 
 
 def proc_llm_stream_responses(messages, tool_choice,
-                              api_to_use, key_to_use, folder_to_use, model_to_use):
+                              api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
@@ -822,7 +826,7 @@ def proc_llm_stream_responses(messages, tool_choice,
             resp, item, id, name, args = function_call_responses_from_llm_chunk(chunk, id, name, args)
             delta_content = None
             if resp is None:
-                resp, delta_content = responses_from_llm_chunk(chunk)
+                resp, delta_content = responses_from_llm_chunk(chunk, summ, sumr)
             if resp is not None:
                 yield (resp, item, delta_content)
     finally:
@@ -1035,11 +1039,16 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if context.is_active():
                 try:
                     item = None
+                    summ = 0
+                    for message in messages:
+                        summ += len(message.get("content", ""))
+                    sumr = 0
                     for r, i, d in proc_llm_stream_responses(
-                        messages, function_tool, api_to_use, key_to_use, folder_to_use, model_to_use
+                        messages, function_tool, api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
                     ):
                         if d is not None:
                             content += d
+                            sumr = len(content)
                         if context.is_active() is False:
                             print("Client cancelled, stopping stream.")
                             break
@@ -1063,11 +1072,16 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             "tool_call_id": item["tool_calls"][0]["id"],
                             "content": result
                         })
+                        summ = 0
+                        for message in messages:
+                            summ += len(message.get("content", ""))
+                        sumr = 0
                         for r, i, d in proc_llm_stream_responses(
-                            messages, "none", api_to_use, key_to_use, folder_to_use, model_to_use
+                            messages, "none", api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
                         ):
                             if d is not None:
                                 content += d
+                                sumr = len(content)
                             if context.is_active() is False:
                                 print("Client cancelled, stopping stream.")
                                 break
