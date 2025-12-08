@@ -510,7 +510,7 @@ async def convert_to_md_async(url: str):
         md_content = data.get("document", {}).get("md_content")
         return filename, md_content
     except Exception as e:
-        print(f"ERROR converting document to md: {e}")
+        print(f"ERROR converting document to md: {e}"[:420])
         return None, None
 
 
@@ -531,7 +531,7 @@ def convert_to_md(url: str):
         loop.close()
         return result
     except Exception as e:
-        print(f"ERROR in convert_to_md wrapper: {e}")
+        print(f"ERROR in convert_to_md wrapper: {e}"[:420])
         return None, None
 
 
@@ -623,9 +623,9 @@ def build_messages_from_history(history, user_message: str,
                 tmps = minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8')
                 messages.append(json.loads(tmps))
             except S3Error as e:
-                print(f"Error getting object from MinIO: {e}")
+                print(f"Error getting object from MinIO: {e}"[:420])
             except json.JSONDecodeError as e:
-                print(f"Error decoding JSON: {e}")
+                print(f"Error decoding JSON: {e}"[:420])
             print(f"Get one message: {tmps[:420]}")
     messages.append(user_message)
     return messages
@@ -897,7 +897,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 raise ValueError("Ни одного аудио чанка не получено для транскрибации")
             return llm_pb2.TranscribeResponse(transcribe=transcribe_proto)
         except Exception as e:
-            print(f"ERROR: {e}")
+            print(f"ERROR: {e}"[:420])
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"ERROR: {e}")
             return llm_pb2.TranscribeResponse(
@@ -970,7 +970,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             md_content = response.text
                         md_docs[md_url_obj.original_name] = md_content
                     except Exception as e:
-                        print(f"ERROR loading md from {md_url_obj.url}: {e}")
+                        print(f"ERROR loading md from {md_url_obj.url}: {e}"[:420])
 
             # Сборка user_message
             user_message, vlm = build_user_message(user_message,
@@ -1000,7 +1000,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 )
                 print(f"Put user message: {tmps[:420]}")
             except Exception as e:
-                print(f"Error uploading object: {e}")
+                print(f"Error uploading object: {e}"[:420])
 
             # Сборка контекста
             messages = build_messages_from_history(history, user_message,
@@ -1090,7 +1090,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 break
                             yield r
                 except Exception as e:
-                    print(f"STREAM ERROR: {e}")
+                    print(f"STREAM ERROR: {e}"[:420])
                     context.set_code(grpc.StatusCode.INTERNAL)
                     context.set_details(f"STREAM ERROR: {e}")
             else:
@@ -1125,9 +1125,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 )
                 print(f"Put llm message: {tmps[:420]}")
             except Exception as e:
-                print(f"Error uploading object: {e}")
+                print(f"Error uploading object: {e}"[:420])
         except Exception as e:
-            print(f"ERROR: {e}")
+            print(f"ERROR: {e}"[:420])
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"ERROR: {e}")
 
