@@ -1098,6 +1098,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             object_name_2 = str(uuid.uuid4())
             if meta is not None and hasattr(meta, "image_gen") and meta.image_gen.image_base64:
+                print(f"FUUUUCK: {meta.image_gen.image_base64[:420]}")
                 content = [
                     {
                         "type": "text",
