@@ -77,6 +77,14 @@ MINIO_ADDRESS = os.environ.get('MINIO_ADDRESS', '')
 BUCKET_NAME = os.environ.get('BUCKET_NAME', 'cache')
 MINIO_ACCESS_KEY = os.environ.get('MINIO_ACCESS_KEY', None)
 MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
+# Дополнительные системные подсказки для моделей
+SYS_PROMPT_ADD = (
+    "Restrictions:\n"
+    "- You MUST NOT engage in, generate, or respond to political content of any kind. "
+    "This includes political opinions, political figures, elections, policies, ideologies, activism, or any attempt to persuade, analyze, or discuss political matters.\n"
+    "- You MUST NOT perform or engage in roleplay, impersonation, fictional personas, character acting, or simulated dialogues where you pretend to be someone or something else. "
+    "Always answer as yourself: a neutral, factual, helpful assistant.\n"
+)
 # Инструменты для моделей с поддержкой функций
 TOOLS = [
     {
@@ -540,7 +548,8 @@ def generate_chat_name(user_message: str):
                 "chat names based on the user's initial message. The name "
                 "should be brief (4 words max), descriptive, and in the "
                 "same language as the user message. Return only the name, "
-                "nothing else. You must NOT answer questions, just summarize."
+                "nothing else. You must NOT answer questions, just summarize." +
+                SYS_PROMPT_ADD
             )
         },
         {
@@ -596,7 +605,8 @@ def build_messages_from_history(history, user_message: str,
             "retrieval and **image_gen** for image generation. "
             "**Do not insert any links or images in your answers. Respond in "
             "the same language as the user using MarkDown markup language. "
-            "If tool output is provided, ALWAYS base your answer on it.**"
+            "If tool output is provided, ALWAYS base your answer on it.**" +
+            SYS_PROMPT_ADD
         )
     }]
     if history:
