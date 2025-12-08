@@ -755,8 +755,8 @@ def responses_from_llm_chunk(chunk, summ, sumr):
     completion_tokens = None
     prompt_tokens = None
     total_tokens = None
-    completion_tokens_fix = sumr / USAGE_FIX
-    prompt_tokens_fix = summ / USAGE_FIX
+    completion_tokens_fix = int(sumr / USAGE_FIX)
+    prompt_tokens_fix = int(summ / USAGE_FIX)
     total_tokens_fix = completion_tokens_fix + prompt_tokens_fix
     if hasattr(chunk, "usage") and chunk.usage:
         usage = chunk.usage
