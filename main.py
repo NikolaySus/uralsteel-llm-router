@@ -620,8 +620,8 @@ def build_messages_from_history(history, user_message: str,
         )
         for message_uuid in history:
             try:
-                tmps = json.loads(minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8'))
-                messages.append(tmps)
+                tmps = minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8')
+                messages.append(json.loads(tmps))
             except S3Error as e:
                 print(f"Error getting object from MinIO: {e}")
             except json.JSONDecodeError as e:
