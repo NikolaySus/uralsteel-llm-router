@@ -632,7 +632,7 @@ def build_messages_from_history(history, user_message: str,
                 print(f"Error decoding JSON: {e}"[:420])
             print(f"Get one message: {tmps[:420]}")
     messages.append(user_message)
-    return messages, vlm
+    return messages, vlm2
 
 
 def change_model_msgs():
