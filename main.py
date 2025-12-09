@@ -449,8 +449,7 @@ def image_gen(query: str):
             size="1024x1024"
         )
 
-        image_base64 = "data:image/png;base64," + response.data[0].b64_json
-        print(f"FUUUUUUCK {image_base64}"[:420])
+        image_base64 = response.data[0].b64_json
         result = "Done!"
     except Exception as e:
         result = f"An error occurred during image gen request: {e}"
@@ -1106,7 +1105,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     },
                     {
                         "type": "image_url",
-                        "image_url": { "url": meta.image_gen.image_base64 }
+                        "image_url": { "url": "data:image/png;base64," + meta.image_gen.image_base64 }
                     }
                 ]
             tmps = json.dumps({"role": "assistant", "content": content})
