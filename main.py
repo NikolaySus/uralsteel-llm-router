@@ -1066,6 +1066,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 item["tool_calls"][0]["function"]["arguments"]
                             )
                         )
+                        print(f"{result}\n{meta}"[:420])
                         if meta is not None:
                             yield llm_pb2.NewMessageResponse(
                                 tool_metadata=meta
