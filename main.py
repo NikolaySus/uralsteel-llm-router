@@ -610,6 +610,7 @@ def build_messages_from_history(history, user_message: str,
             SYS_PROMPT_ADD
         )
     }]
+    vlm2 = False
     if history:
         # Minio get
         minio_client = Minio(
@@ -621,14 +622,17 @@ def build_messages_from_history(history, user_message: str,
         for message_uuid in history:
             try:
                 tmps = minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8')
-                messages.append(json.loads(tmps))
+                tmpd = json.loads(tmps)
+                if isinstance(tmpd["content"], list) and any("image_url" in item for item in tmpd["content"]):
+                    vlm2 = True
+                messages.append(tmpd)
             except S3Error as e:
                 print(f"Error getting object from MinIO: {e}"[:420])
             except json.JSONDecodeError as e:
                 print(f"Error decoding JSON: {e}"[:420])
             print(f"Get one message: {tmps[:420]}")
     messages.append(user_message)
-    return messages
+    return messages, vlm
 
 
 def change_model_msgs():
@@ -1003,7 +1007,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 print(f"Error uploading object: {e}"[:420])
 
             # Сборка контекста
-            messages = build_messages_from_history(history, user_message,
+            messages, vlm2 = build_messages_from_history(history, user_message,
                                                    text2text_override)
 
             # Определяем модель для запроса
@@ -1013,7 +1017,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             folder_to_use = ALL_API_VARS["yandexai"]["folder"]
             if text2text_override:
                 model_to_use = text2text_override
-                if vlm and model_to_use != ALL_API_VARS["openaivlm"]["model"]:
+                if (vlm or vlm2) and model_to_use != ALL_API_VARS["openaivlm"]["model"]:
                     for msg in change_model_msgs():
                         yield msg
                     return
