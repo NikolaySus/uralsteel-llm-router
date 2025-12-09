@@ -455,7 +455,7 @@ def image_gen(query: str):
         )
 
         image_base64 = response.data[0].b64_json
-        result = "Done!"
+        result = "The image has been generated, everything is fine."
     except Exception as e:
         result = f"An error occurred during image gen request: {e}"
     return result, llm_pb2.ToolMetadataResponse(
