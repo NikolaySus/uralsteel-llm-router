@@ -43,6 +43,7 @@ for key, value in os.environ.items():
 CONST = "INFERENCE_API_"
 CONST_LEN = len(CONST)
 ALL_API_VARS = dict()
+MODEL_TO_API = dict()
 for name, value in os.environ.items():
     if name.startswith(CONST):
         api_and_case = name[CONST_LEN:].lower()
@@ -51,6 +52,8 @@ for name, value in os.environ.items():
         case = api_and_case[delim + 1:]
         ALL_API_VARS.setdefault(api, dict())
         ALL_API_VARS[api][case] = value
+        if case == "model":
+            MODEL_TO_API[value] = api
 # Секретный ключ для клиентского доступа к gRPC методам
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
 # Формат даты и времени
@@ -860,6 +863,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                          WHITELIST_REGEX_TEXT2TEXT,
                                          BLACKLIST_REGEX_TEXT2TEXT)
             t.append(ALL_API_VARS["openaivlm"]["model"])
+            t.append(ALL_API_VARS["gptmetal"]["model"])
             return llm_pb2.StringsListResponse(
                 strings=t)
         except Exception as e:
@@ -1016,24 +1020,19 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                                    text2text_override)
 
             # Определяем модель для запроса
-            api_to_use = ALL_API_VARS["yandexai"]["base_url"]
-            key_to_use = ALL_API_VARS["yandexai"]["key"]
-            model_to_use = ALL_API_VARS["yandexai"]["model"]
-            folder_to_use = ALL_API_VARS["yandexai"]["folder"]
             if text2text_override:
                 model_to_use = text2text_override
                 if (vlm or vlm2) and model_to_use != ALL_API_VARS["openaivlm"]["model"]:
                     for msg in change_model_msgs():
                         yield msg
                     return
-            elif vlm:
+            elif (vlm or vlm2):
                 model_to_use = ALL_API_VARS["openaivlm"]["model"]
             else:
                 model_to_use = ALL_API_VARS["yandexai"]["model"]
-            if model_to_use == ALL_API_VARS["openaivlm"]["model"]:
-                api_to_use = ALL_API_VARS["openai"]["base_url"]
-                key_to_use = ALL_API_VARS["openai"]["key"]
-                folder_to_use = None
+            api_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["base_url"]
+            key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
+            folder_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
 
             # Определяем инструмент функции
             if function_tool is None:
@@ -1192,6 +1191,7 @@ if __name__ == "__main__":
     assert ALL_API_VARS["openaiimgen"]["model"], "openai model is n/a"
     assert ALL_API_VARS["openaivlm"]["prices_url"], "openai prices url is n/a"
     assert ALL_API_VARS["openaivlm"]["model"], "openai model is n/a"
+    assert ALL_API_VARS["gptmetal"]["model"], "gptmetal model is n/a"
     # Скрэппинг цен (prepare.py)
     if GENERATE_CONFIG_WHEN == "always" or (
         GENERATE_CONFIG_WHEN == "missing" and not os.path.exists(CONFIG_PATH)):
@@ -1229,6 +1229,7 @@ if __name__ == "__main__":
                                  WHITELIST_REGEX_TEXT2TEXT,
                                  BLACKLIST_REGEX_TEXT2TEXT)
     check_arr.append(ALL_API_VARS["openaivlm"]["model"])
+    check_arr.append(ALL_API_VARS["gptmetal"]["model"])
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,

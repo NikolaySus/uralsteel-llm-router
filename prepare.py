@@ -209,6 +209,8 @@ async def fetch_openai_pricing(url: str) -> str:
 def get_coef(api_vars) -> float:
     """Получить коэффициент цены для API."""
     query_string = api_vars["model"]
+    if "prices_url" not in api_vars:
+        return 0.0
     if api_vars["prices_url"] in CACHED_PAGES:
         long_string = CACHED_PAGES[api_vars["prices_url"]]
         ok = True
