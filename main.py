@@ -7,6 +7,7 @@ uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
 
 from datetime import datetime
 from concurrent import futures
+from typing import List
 from io import BytesIO
 import json
 import logging
@@ -340,6 +341,12 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
         content.append({"type": "text", "text": text_message})
 
     return {"role": "user", "content": content}, is_there_images
+
+
+def update_model_to_api(models: List(str), api: str):
+    """Обновляет глобальную переменную MODEL_TO_API новыми моделями."""
+    for model in models:
+        MODEL_TO_API[model] = api
 
 
 def available_models(base_url: str,
@@ -1239,8 +1246,11 @@ if __name__ == "__main__":
                                  ALL_API_VARS["yandexai"]["folder"],
                                  WHITELIST_REGEX_TEXT2TEXT,
                                  BLACKLIST_REGEX_TEXT2TEXT)
+    update_model_to_api(check_arr, "yandexai")
     check_arr.append(ALL_API_VARS["openaivlm"]["model"])
+    update_model_to_api([ALL_API_VARS["openaivlm"]["model"]], "openaivlm")
     check_arr.append(ALL_API_VARS["gptmetal"]["model"])
+    update_model_to_api([ALL_API_VARS["gptmetal"]["model"]], "gptmetal")
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,
