@@ -7,7 +7,6 @@ uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
 
 from datetime import datetime
 from concurrent import futures
-from typing import List
 from io import BytesIO
 import json
 import logging
@@ -343,7 +342,7 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
     return {"role": "user", "content": content}, is_there_images
 
 
-def update_model_to_api(models: List(str), api: str):
+def update_model_to_api(models, api):
     """Обновляет глобальную переменную MODEL_TO_API новыми моделями."""
     for model in models:
         MODEL_TO_API[model] = api
