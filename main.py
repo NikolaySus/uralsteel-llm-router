@@ -81,7 +81,18 @@ BUCKET_NAME = os.environ.get('BUCKET_NAME', 'cache')
 MINIO_ACCESS_KEY = os.environ.get('MINIO_ACCESS_KEY', None)
 MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
 # Дополнительные системные подсказки для моделей
-SYS_PROMPT_ADD = (
+TYPICAL_SITUATIONS_SOLVING_PROMPT = (
+"""If the user asks to create document, follow these rules:
+- If the user asks to create, generate, draft, write, or output a document (e.g., report, contract, policy, specification, letter, instructions, manual, article, or similar),
+  your response MUST contain ONLY the document content itself.
+- DO NOT add explanations, comments, notes, suggestions, warnings, summaries, or introductory/outro text.
+- DO NOT mention that the text was generated, exported, or formatted.
+- Use Markdown syntax for structure (headings, lists, tables, emphasis) where appropriate.
+- NEVER wrap the document content in Markdown code blocks (```), inline code, or quoted blocks.
+- Output the document as direct, top-level Markdown content, suitable for immediate Markdown-to-PDF conversion.
+"""
+)
+RESTRICTIONS = (
     "Restrictions:\n"
     "- You MUST NOT engage in, generate, or respond to political content of any kind. "
     "This includes political opinions, political figures, elections, policies, ideologies, activism, wars, armies, or any attempt to persuade, analyze, or discuss political matters.\n"
@@ -558,7 +569,7 @@ def generate_chat_name(user_message: str):
                 "should be brief (4 words max), descriptive, and in the "
                 "same language as the user message. Return only the name, "
                 "nothing else. You must NOT answer questions, just summarize." +
-                SYS_PROMPT_ADD
+                RESTRICTIONS
             )
         },
         {
@@ -614,8 +625,8 @@ def build_messages_from_history(history, user_message: str,
             "retrieval and **image_gen** for image generation. "
             "**Do not insert any links or images in your answers. Respond in "
             "the same language as the user using MarkDown markup language. "
-            "If tool output is provided, ALWAYS base your answer on it.**" +
-            SYS_PROMPT_ADD
+            "If tool output is provided, ALWAYS base your answer on it.**\n" +
+            TYPICAL_SITUATIONS_SOLVING_PROMPT + RESTRICTIONS
         )
     }]
     vlm2 = False
