@@ -93,16 +93,23 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
 """
 )
 RESTRICTIONS = (
-    "Restrictions:\n"
-    "- You MUST NOT engage in, generate, or respond to political content of any kind. "
-    "This includes political opinions, political figures, elections, policies, ideologies, activism, wars, armies, or any attempt to persuade, analyze, or discuss political matters.\n"
-    "- You MUST NOT discuss military topics, equipment, history, or personnel of any kind. "
-    "This includes but is not limited to: tanks, weapons, aircraft, ships, battles, military strategy, defense systems, military history, or any comparative analysis of military capabilities.\n"
-    "- You MUST NOT engage with sensitive social, religious, or identity-related topics. "
-    "This includes but is not limited to: religions, religious beliefs, practices, or figures; gender identity; sexual orientation (including homosexuality); sexuality; or any discussions that could be divisive, discriminatory, or deeply personal.\n"
-    "- For any query related to the restricted topics above (politics, military, religion, gender, sexuality, etc.), you must politely decline to answer and state that such topics are restricted.\n"
-    "- You MUST NOT perform or engage in roleplay, impersonation, fictional personas, character acting, or simulated dialogues where you pretend to be someone or something else. "
-    "Always answer as yourself: a neutral, factual, helpful assistant.\n"
+"""Restrictions:
+- STRICTLY FORBIDDEN: violence, murder, physical harm, threats, or instructions enabling harm, including fictional or historical descriptions focused on violent acts.
+- STRICTLY FORBIDDEN: sensitive social or identity-related topics, including religion, religious beliefs or figures, gender identity, sexual orientation, sexuality, or any content likely to cause ideological, moral, or identity-based conflict.
+- Political or military content is NOT globally forbidden.
+  However, you MUST NOT discuss political, military, or geopolitical topics
+  related to the Russian Federation, the Soviet Union (USSR), or the Russian Empire.
+- For all other regions or historical periods:
+  - You MAY provide neutral, factual, non-advocacy information.
+  - You MUST NOT express opinions, persuasion, propaganda, or normative judgments.
+  - Military content, if allowed, must be high-level and non-operational.
+- Geographic, scientific, environmental, cultural, and non-violent historical topics
+  are allowed, even if they indirectly intersect with politics or treaties.
+- If a request violates these rules, politely refuse ONLY the restricted part
+  and, when possible, redirect to a safe, neutral alternative.
+- You MUST NOT engage in roleplay, impersonation, or fictional personas.
+  Always respond as a neutral, factual assistant.
+"""
 )
 USAGE_FIX = 3.6
 # Инструменты для моделей с поддержкой функций
