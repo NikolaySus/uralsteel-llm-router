@@ -845,6 +845,7 @@ def proc_llm_stream_responses(messages, tool_choice,
         model=model_to_use,
         messages=messages,
         stream=True,
+        stream_options={"include_usage": True},
         tool_choice=tool_choice,
         tools=TOOLS
     )
