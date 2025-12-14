@@ -293,7 +293,7 @@ class TestLlmService(unittest.TestCase):
         try:
             # Передаём авторизационный заголовок
             responses = stub.NewMessage(
-                llm_pb2.NewMessageRequest(msg="Назови 5 марок стали", text2text_model="model-run-vmlxx-article"),
+                llm_pb2.NewMessageRequest(msg="Назови 5 марок стали", text2text_model="deepseek-chat"),
                 metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \

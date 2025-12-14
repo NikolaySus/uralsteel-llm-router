@@ -539,6 +539,51 @@ async def convert_to_md_async(url: str):
         return None, None
 
 
+async def check_docling_health():
+    """Проверяет доступность docling API.
+    
+    Returns:
+        bool: True если API доступен и отвечает корректно, False в противном случае.
+    """
+    if not DOCLING_ADDRESS:
+        print("ERROR: DOCLING_ADDRESS is not set")
+        return False
+    
+    try:
+        # Используем стандартный health check endpoint
+        health_url = f"http://{DOCLING_ADDRESS}/health"
+        async_client = httpx.AsyncClient(timeout=10.0)
+        
+        # Отправляем GET запрос на health endpoint
+        response = await async_client.get(health_url)
+        
+        # Проверяем, что сервер отвечает с успешным статусом
+        if response.status_code == 200:
+            # Можно также проверить содержимое ответа, если API возвращает JSON с статусом
+            try:
+                data = response.json()
+                if isinstance(data, dict) and data.get("status") == "ok":
+                    print(f"Docling health check: OK (status: {data.get('status')})")
+                else:
+                    print(f"Docling health check: OK (status code: {response.status_code})")
+            except (json.JSONDecodeError, ValueError):
+                # Если ответ не JSON, просто проверяем статус код
+                print(f"Docling health check: OK (status code: {response.status_code})")
+            return True
+        else:
+            print(f"Docling health check: FAILED (status code: {response.status_code})")
+            return False
+    except httpx.ConnectError:
+        print("ERROR: Cannot connect to docling API")
+        return False
+    except httpx.TimeoutException:
+        print("ERROR: Docling API timeout")
+        return False
+    except Exception as e:
+        print(f"ERROR checking docling health: {e}"[:420])
+        return False
+
+
 def convert_to_md(url: str):
     """Синхронная обёртка для конвертации документа в markdown.
     
@@ -1186,6 +1231,26 @@ def serve():
 
 
 if __name__ == "__main__":
+    # Проверка доступности docling API
+    if DOCLING_ADDRESS:
+        print("Checking docling API health...")
+        try:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            is_healthy = loop.run_until_complete(check_docling_health())
+            loop.close()
+            if not is_healthy:
+                print("ERROR: Docling API health check failed.")
+                exit(1)
+            else:
+                print("Docling API health check passed.")
+        except Exception as e:
+            print(f"ERROR during docling health check: {e}"[:420])
+            exit(1)
+    else:
+        print("ERROR: Docling API address not set.")
+        exit(1)
+
     # Вывод конфигурации API (ключи скрыты)
     for key, value in ALL_API_VARS.items():
         print(f"API config for {key}:")
