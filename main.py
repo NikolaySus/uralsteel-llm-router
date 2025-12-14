@@ -881,6 +881,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                          BLACKLIST_REGEX_TEXT2TEXT)
             t.append(ALL_API_VARS["openaivlm"]["model"])
             t.append(ALL_API_VARS["gptmetal"]["model"])
+            t.append(ALL_API_VARS["deepseek"]["model"])
             return llm_pb2.StringsListResponse(
                 strings=t)
         except Exception as e:
@@ -1250,6 +1251,8 @@ if __name__ == "__main__":
     update_model_to_api([ALL_API_VARS["openaivlm"]["model"]], "openaivlm")
     check_arr.append(ALL_API_VARS["gptmetal"]["model"])
     update_model_to_api([ALL_API_VARS["gptmetal"]["model"]], "gptmetal")
+    check_arr.append(ALL_API_VARS["deepseek"]["model"])
+    update_model_to_api([ALL_API_VARS["deepseek"]["model"]], "deepseek")
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,
