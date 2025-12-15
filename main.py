@@ -630,7 +630,9 @@ def generate_chat_name(user_message: str):
                 "message is empty, pointless or violates the restrictions, "
                 "then name the chat with the current date and time. "
                 "Current date and time: "
-                f"{datetime.now().strftime(DATETIME_FORMAT)}.\n" +
+                f"{datetime.now().strftime(DATETIME_FORMAT)}. "
+                "Do not insert any links in your answers. Respond in "
+                "the same language as the user using MarkDown markup language.\n" +
                 RESTRICTIONS
             )
         },
