@@ -645,11 +645,10 @@ def generate_chat_name(user_message: str):
         }
     ]
     response = OpenAI(
-        base_url=ALL_API_VARS["yandexai"]["base_url"],
-        api_key=ALL_API_VARS["yandexai"]["key"],
-        project=ALL_API_VARS["yandexai"]["folder"],
+        base_url=ALL_API_VARS["openaimini"]["base_url"],
+        api_key=ALL_API_VARS["openaimini"]["key"],
     ).chat.completions.create(
-        model=ALL_API_VARS["yandexaisummary"]["model"],
+        model=ALL_API_VARS["openaimini"]["model"],
         messages=messages,
         max_tokens=128,
         temperature=0.9
