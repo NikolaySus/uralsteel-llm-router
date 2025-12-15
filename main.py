@@ -622,11 +622,15 @@ def generate_chat_name(user_message: str):
         {
             "role": "system",
             "content": (
-                "You are a helpful assistant that generates short, concise "
+                "You are an AI agent that generates short, concise "
                 "chat names based on the user's initial message. The name "
                 "should be brief (4 words max), descriptive, and in the "
                 "same language as the user message. Return only the name, "
-                "nothing else. You must NOT answer questions, just summarize." +
+                "nothing else. You must NOT answer questions. If the user "
+                "message is empty, pointless or violates the restrictions, "
+                "then name the chat with the current date and time. "
+                "Current date and time: "
+                f"{datetime.now().strftime(DATETIME_FORMAT)}.\n" +
                 RESTRICTIONS
             )
         },
@@ -636,14 +640,12 @@ def generate_chat_name(user_message: str):
         }
     ]
     response = OpenAI(
-        base_url=ALL_API_VARS["yandexai"]["base_url"],
-        api_key=ALL_API_VARS["yandexai"]["key"],
-        project=ALL_API_VARS["yandexai"]["folder"],
+        base_url=ALL_API_VARS["yandexaisummary"]["base_url"],
+        api_key=ALL_API_VARS["yandexaisummary"]["key"]
     ).chat.completions.create(
         model=ALL_API_VARS["yandexaisummary"]["model"],
         messages=messages,
-        max_tokens=128,
-        temperature=0.9
+        max_tokens=128
     )
     name_c = response.choices[0].message.content.strip()
     if not hasattr(response, "usage"):
