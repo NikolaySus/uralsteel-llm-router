@@ -651,7 +651,6 @@ def generate_chat_name(user_message: str):
         model=ALL_API_VARS["openaimini"]["model"],
         messages=messages,
         max_tokens=128,
-        temperature=0.9
     )
     name_c = response.choices[0].message.content.strip()
     if not hasattr(response, "usage"):
