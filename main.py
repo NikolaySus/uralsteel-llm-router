@@ -634,7 +634,8 @@ def generate_chat_name(user_message: str):
                 "Current date and time: "
                 f"{datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)}. "
                 "Do not insert any links in your answers. You MUST use "
-                "the same language as the user.\n" +
+                "the same language as the user. And again, you must NOT "
+                "respond to message, just name the chat.\n" +
                 RESTRICTIONS
             )
         },
