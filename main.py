@@ -896,21 +896,30 @@ def proc_llm_stream_responses(messages, tool_choice,
         - item: объект вызова функции или None
     """
     # tmp
-    tools = None
     if tool_choice != "none":
-        tools = TOOLS
-    response = OpenAI(
-        base_url=api_to_use,
-        api_key=key_to_use,
-        project=folder_to_use,
-    ).chat.completions.create(
-        model=model_to_use,
-        messages=messages,
-        stream=True,
-        stream_options={"include_usage": True},
-        tool_choice=tool_choice,
-        tools=tools
-    )
+        response = OpenAI(
+            base_url=api_to_use,
+            api_key=key_to_use,
+            project=folder_to_use,
+        ).chat.completions.create(
+            model=model_to_use,
+            messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
+            tool_choice=tool_choice,
+            tools=TOOLS
+        )
+    else:
+        response = OpenAI(
+            base_url=api_to_use,
+            api_key=key_to_use,
+            project=folder_to_use,
+        ).chat.completions.create(
+            model=model_to_use,
+            messages=messages,
+            stream=True,
+            stream_options={"include_usage": True},
+        )
     try:
         id = ""
         name = ""
