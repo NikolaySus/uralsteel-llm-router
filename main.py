@@ -6,6 +6,7 @@ uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
 """
 
 from datetime import datetime
+from zoneinfo import ZoneInfo
 from concurrent import futures
 from io import BytesIO
 import json
@@ -58,6 +59,7 @@ for name, value in os.environ.items():
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
 # Формат даты и времени
 DATETIME_FORMAT = os.environ.get('DATETIME_FORMAT', '%Y-%m-%dT%H:%M:%S')
+DATETIME_TZ = ZoneInfo('Europe/Moscow')
 # Путь к конфигурационному файлу
 CONFIG_PATH = "config.json"
 # Базовый URL Tavily сервиса
@@ -429,7 +431,7 @@ def transcribe_audio(audio_buffer: BytesIO,
         duration=duration,
         expected_cost_usd=(duration * ALL_API_VARS["openai"]["price_coef"]
                            if duration else 0.0),
-        datetime=datetime.now().strftime(DATETIME_FORMAT)
+        datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
     )
     return text, proto
 
@@ -628,11 +630,11 @@ def generate_chat_name(user_message: str):
                 "same language as the user message. Return only the name, "
                 "nothing else. You must NOT answer questions. If the user "
                 "message is empty, pointless or violates the restrictions, "
-                "then name the chat with the current date and time. "
+                "then name the chat with the current date and time (copy it). "
                 "Current date and time: "
-                f"{datetime.now().strftime(DATETIME_FORMAT)}. "
+                f"{datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)}. "
                 "Do not insert any links in your answers. Respond in "
-                "the same language as the user using MarkDown markup language.\n" +
+                "the same language as the user.\n" +
                 RESTRICTIONS
             )
         },
@@ -682,7 +684,7 @@ def build_messages_from_history(history, user_message: str,
             "### You are *helpfull* and *highly skilled* LLM-powered "
             "assistant that always follows best practices.\n"
             f"The base LLM is **{model_to_use}**. Current date and time: "
-            f"**{datetime.now().strftime(DATETIME_FORMAT)}**. "
+            f"**{datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)}**. "
             "*Note that current date and time are relevant only for last "
             "message, previous ones could be sent a long time ago*. "
             "You can use the **websearch** tool for relevant information "
@@ -726,7 +728,7 @@ def change_model_msgs():
                             f"модели, пожалуйста, выберите {
                                 ALL_API_VARS["openaivlm"]["model"]}",
                     reasoning_content="",
-                    datetime=datetime.now().strftime(DATETIME_FORMAT)
+                    datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
                 )
             ), llm_pb2.NewMessageResponse(
                 complete=llm_pb2.CompleteResponseType(
@@ -734,7 +736,7 @@ def change_model_msgs():
                     completion_tokens=0,
                     total_tokens=0,
                     expected_cost_usd=0,
-                    datetime=datetime.now().strftime(DATETIME_FORMAT)
+                    datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
                 )
             )]
 
@@ -864,7 +866,7 @@ def responses_from_llm_chunk(chunk, summ, sumr):
                 total_tokens=(total_tokens or total_tokens_fix),
                 expected_cost_usd=ALL_API_VARS["yandexai"]["price_coef"] *
                                   (total_tokens or total_tokens_fix),
-                datetime=datetime.now().strftime(DATETIME_FORMAT)
+                datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
             )
         ), None
     # Если один из delta content есть, создаём GenerateResponseType
@@ -873,7 +875,7 @@ def responses_from_llm_chunk(chunk, summ, sumr):
             generate=llm_pb2.GenerateResponseType(
                 content=(delta_content or ""),
                 reasoning_content=(delta_reasoning_content or ""),
-                datetime=datetime.now().strftime(DATETIME_FORMAT)
+                datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
             )
         ), delta_content
     else:
@@ -996,7 +998,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     transcription="",
                     duration=0.0,
                     expected_cost_usd=0.0,
-                    datetime=datetime.now().strftime(DATETIME_FORMAT)
+                    datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
                 )
             )
 
