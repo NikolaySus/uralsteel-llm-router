@@ -640,12 +640,14 @@ def generate_chat_name(user_message: str):
         }
     ]
     response = OpenAI(
-        base_url=ALL_API_VARS["yandexaisummary"]["base_url"],
-        api_key=ALL_API_VARS["yandexaisummary"]["key"]
+        base_url=ALL_API_VARS["yandexai"]["base_url"],
+        api_key=ALL_API_VARS["yandexai"]["key"],
+        project=ALL_API_VARS["yandexai"]["folder"],
     ).chat.completions.create(
         model=ALL_API_VARS["yandexaisummary"]["model"],
         messages=messages,
-        max_tokens=128
+        max_tokens=128,
+        temperature=0.9
     )
     name_c = response.choices[0].message.content.strip()
     if not hasattr(response, "usage"):
