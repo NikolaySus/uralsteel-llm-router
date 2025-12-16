@@ -495,9 +495,9 @@ def image_gen(query: str):
     )
 
 
-def call_function(name, args):
+def call_function(log_uid, name, args):
     """Вызов функции инструмента по имени с аргументами args."""
-    print(f"Calling {name} with:\n{args}")
+    print(f"INFO: ({log_uid}) calling {name} with:\n{args}")
     if name == "websearch":
         result, meta = websearch(**args)
         return json.dumps(result,
@@ -882,7 +882,7 @@ def responses_from_llm_chunk(chunk, summ, sumr):
         return None, None
 
 
-def proc_llm_stream_responses(messages, tool_choice,
+def proc_llm_stream_responses(log_uid, messages, tool_choice,
                               api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr):
     """Генератор для обработки потока ответов от LLM.
     
@@ -895,7 +895,7 @@ def proc_llm_stream_responses(messages, tool_choice,
         - response: llm_pb2.NewMessageResponse или None
         - item: объект вызова функции или None
     """
-    # tmp
+    print(f"INFO: ({log_uid}) model_to_use is set to {model_to_use or "-"}, tool_choice is set to {tool_choice or "-"}")
     if tool_choice != "none":
         response = OpenAI(
             base_url=api_to_use,
@@ -1023,6 +1023,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             user_message = request.msg
             history = request.history if request.history else []
             text2text_override = request.text2text_model if request.text2text_model else None
+            log_uid = str(uuid.uuid4())
+            print(f"INFO: ({log_uid}) text2text_model is set to {request.text2text_model or "-"}")
             function_tool = request.function if request.function else None
             documents_urls = request.documents_urls if request.documents_urls else None
             images_urls = request.images_urls if request.images_urls else None
@@ -1043,7 +1045,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     if chat_name_resp is not None:
                         yield llm_pb2.NewMessageResponse(chat_name=chat_name_resp)
                 except Exception as e:
-                    print(f"ERROR generating chat name: {e}")
+                    print(f"ERROR: ({log_uid}) error generating chat name: {e}")
                     # Не прерываем обработку запроса из-за ошибки имени чата
 
             # Обработка документов
@@ -1074,12 +1076,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             md_content = response.text
                         md_docs[md_url_obj.original_name] = md_content
                     except Exception as e:
-                        print(f"ERROR loading md from {md_url_obj.url}: {e}"[:420])
+                        print(f"ERROR: ({log_uid}) error loading md from {md_url_obj.url}: {e}"[:420])
 
             # Сборка user_message
             user_message, vlm = build_user_message(user_message,
                                                    md_docs, images_urls)
-            
+
             # Minio put
             minio_client = Minio(
                 MINIO_ADDRESS,
@@ -1102,13 +1104,13 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     user_message_uid=object_name
                 )
-                print(f"Put user message: {tmps[:420]}")
+                print(f"INFO: ({log_uid}) put user message: {tmps[:420]}")
             except Exception as e:
-                print(f"Error uploading object: {e}"[:420])
+                print(f"ERROR: ({log_uid}) error uploading object: {e}"[:420])
 
             # Сборка контекста
             messages, vlm2 = build_messages_from_history(history, user_message,
-                                                   text2text_override)
+                                                         text2text_override)
 
             # Определяем модель для запроса
             if text2text_override:
@@ -1146,13 +1148,13 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         summ += len(message.get("content", ""))
                     sumr = 0
                     for r, i, d in proc_llm_stream_responses(
-                        messages, function_tool, api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
+                        log_uid, messages, function_tool, api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
                     ):
                         if d is not None:
                             content += d
                             sumr = len(content)
                         if context.is_active() is False:
-                            print("Client cancelled, stopping stream.")
+                            print(f"INFO: ({log_uid}) client cancelled, stopping stream.")
                             break
                         if i is not None:
                             item = i
@@ -1160,12 +1162,13 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     if item is not None:
                         messages.append(item)
                         result, meta = call_function(
+                            log_uid,
                             item["tool_calls"][0]["function"]["name"],
                             json.loads(
                                 item["tool_calls"][0]["function"]["arguments"]
                             )
                         )
-                        print(f"{result}\n{meta}"[:420])
+                        print(f"INFO: ({log_uid}) tool out:\n{result}\n{meta}"[:420])
                         if meta is not None:
                             yield llm_pb2.NewMessageResponse(
                                 tool_metadata=meta
@@ -1180,13 +1183,13 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             summ += len(message.get("content", ""))
                         sumr = 0
                         for r, i, d in proc_llm_stream_responses(
-                            messages, "none", api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
+                            log_uid, messages, "none", api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
                         ):
                             if d is not None:
                                 content += d
                                 sumr = len(content)
                             if context.is_active() is False:
-                                print("Client cancelled, stopping stream.")
+                                print(f"INFO: ({log_uid}) client cancelled, stopping stream.")
                                 break
                             yield r
                 except Exception as e:
@@ -1194,7 +1197,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     context.set_code(grpc.StatusCode.INTERNAL)
                     context.set_details(f"STREAM ERROR: {e}")
             else:
-                print("Client cancelled, stopping stream.")
+                print(f"INFO: ({log_uid}) client cancelled, stopping stream.")
 
             object_name_2 = str(uuid.uuid4())
             if meta is not None and hasattr(meta, "image_gen") and meta.image_gen.image_base64:
@@ -1222,11 +1225,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     llm_message_uid=object_name_2
                 )
-                print(f"Put llm message: {tmps[:420]}")
+                print(f"INFO: ({log_uid}) put llm message: {tmps[:420]}")
             except Exception as e:
-                print(f"Error uploading object: {e}"[:420])
+                print(f"ERROR: ({log_uid}) error uploading object: {e}"[:420])
         except Exception as e:
-            print(f"ERROR: {e}"[:420])
+            print(f"ERROR: (no-uid) error: {e}"[:420])
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"ERROR: {e}")
 
