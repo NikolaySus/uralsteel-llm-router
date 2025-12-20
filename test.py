@@ -294,7 +294,7 @@ class TestLlmService(unittest.TestCase):
         try:
             # Передаём авторизационный заголовок
             responses = stub.NewMessage(
-                llm_pb2.NewMessageRequest(msg="Назови 5 марок стали", text2text_model="metalgpt-1"),
+                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE),
                 metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
@@ -325,7 +325,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text no history failed: {e}")
-    comment = '''
+
     def test_05_new_message_text_with_history(self):
         """Тест 5: NewMessage с текстовым сообщением и историей -
            требует авторизацию."""
@@ -372,7 +372,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with history failed: {e}")
-
+    comment = '''
     def test_06_transcribe_audio_no_history(self):
         """Тест 6: Transcribe с потоком mp3 чанков без истории -
            требует авторизацию."""

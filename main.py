@@ -25,6 +25,7 @@ from google.protobuf import empty_pb2
 import grpc
 import httpx
 from openai import OpenAI
+import pymupdf
 from tavily import TavilyClient
 from minio import Minio
 from minio.error import S3Error
@@ -253,6 +254,17 @@ class AuthInterceptor(grpc.ServerInterceptor):
 
         # Секретный ключ верен - пропускаем запрос дальше
         return continuation(handler_call_details)
+
+
+def remote_pdf_to_b64_images(url: str):
+    r = requests.get(url)
+    data = r.content
+    doc = pymupdf.Document(stream=data)
+    ret = []
+    for page in doc:  # iterate through the pages
+        pix = page.get_pixmap()  # render page to an image
+        ret.append(f"data:image/png;base64,{base64.b64encode(pix.tobytes(output="png")).decode("utf-8")}")
+    return ret
 
 
 def image_url_to_base64(url: str) -> str:
@@ -544,7 +556,12 @@ async def convert_to_md_async(url: str):
         md_content = data.get("document", {}).get("md_content")
         return filename, md_content
     except Exception as e:
-        print(f"ERROR converting document to md: {e}"[:420])
+        print(f"ERROR: converting document to md: {e}"[:420])
+        print("INFO: converting document to dumb md...")
+        try:
+            "\n".join([f"## PAGE {i}\n\n![page {i}]({u})\n\n" for i, u in enumerate(remote_pdf_to_b64_images(url))])
+        except Exception as e2:
+            print(f"ERROR: converting document to dumb md: {e2}"[:420])
         return None, None
 
 
