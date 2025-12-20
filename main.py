@@ -533,6 +533,8 @@ async def convert_to_md_async(url: str):
         print("ERROR: DOCLING_ADDRESS is not set")
         return None, None
 
+    filename = ""
+
     try:
         docling_url = f"http://{DOCLING_ADDRESS}/v1/convert/source"
         payload = {
@@ -559,7 +561,7 @@ async def convert_to_md_async(url: str):
         print(f"ERROR: converting document to md: {e}"[:420])
         print("INFO: converting document to dumb md...")
         try:
-            "\n".join([f"## PAGE {i}\n\n![page {i}]({u})\n\n" for i, u in enumerate(remote_pdf_to_b64_images(url))])
+            return filename, "\n".join([f"## PAGE {i}\n\n![page {i}]({u})\n\n" for i, u in enumerate(remote_pdf_to_b64_images(url))])
         except Exception as e2:
             print(f"ERROR: converting document to dumb md: {e2}"[:420])
         return None, None
