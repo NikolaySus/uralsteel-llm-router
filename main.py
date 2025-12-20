@@ -551,7 +551,7 @@ async def convert_to_md_async(url: str):
                 "url": url
             }]
         }
-        async_client = httpx.AsyncClient(timeout=90.0)
+        async_client = httpx.AsyncClient(timeout=60.0)
         response = await async_client.post(docling_url, json=payload)
         data = response.json()
         filename = urllib.parse.unquote(data.get("document", {}).get("filename"))
