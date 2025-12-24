@@ -219,3 +219,4 @@ server.key
 # tmp files
 *.tmp
 config.json
+*.pdf

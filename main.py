@@ -536,6 +536,21 @@ async def convert_to_md_async(url: str):
     filename = ""
 
     try:
+        # First, download the file to get its size in bytes
+        async_client = httpx.AsyncClient(timeout=60.0)
+
+        # Get the file size by making a HEAD request first (more efficient)
+        original_size = 0
+        try:
+            head_response = await async_client.head(url)
+            original_size = int(head_response.headers['content-length'])
+        except:
+            # If HEAD fails, try GET but only read headers
+            get_response = await async_client.get(url)
+            original_size = len(get_response.content)
+        print(f"INFO: original_size={original_size}")
+
+        # Now send to docling API
         docling_url = f"http://{DOCLING_ADDRESS}/v1/convert/source"
         payload = {
             "options": {
@@ -548,14 +563,20 @@ async def convert_to_md_async(url: str):
             },
             "sources": [{
                 "kind": "http",
-                "url": url
+                "url": url.replace('localhost', 'minio-2')
             }]
         }
-        async_client = httpx.AsyncClient(timeout=60.0)
         response = await async_client.post(docling_url, json=payload)
         data = response.json()
-        filename = urllib.parse.unquote(data.get("document", {}).get("filename"))
+        filename = urllib.parse.unquote(data.get("document", {"filename":""}).get("filename"))
         md_content = data.get("document", {}).get("md_content")
+        # Calculate the size of md_content in bytes (as if written to file)
+        if md_content:
+            md_size = len(md_content.encode('utf-8'))
+            print(f"INFO: md_size={md_size}")
+            # Check if original file size is more than 3 times greater than md_content size
+            if original_size > 3 * md_size:
+                raise AssertionError(f"Original file size ({original_size} bytes) is more than 3 times greater than markdown size ({md_size} bytes).")
         return filename, md_content
     except Exception as e:
         print(f"ERROR: converting document to md: {e}"[:420])
