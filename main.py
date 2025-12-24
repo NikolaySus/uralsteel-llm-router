@@ -563,7 +563,7 @@ async def convert_to_md_async(url: str):
             },
             "sources": [{
                 "kind": "http",
-                "url": url.replace('localhost', 'minio-2')
+                "url": url #.replace('localhost', 'minio-2')
             }]
         }
         response = await async_client.post(docling_url, json=payload)
