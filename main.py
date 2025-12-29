@@ -14,24 +14,22 @@ import logging
 import os
 import re
 import subprocess
-import urllib
-import base64
 import uuid
 import asyncio
-import imghdr
 
-import requests
 from google.protobuf import empty_pb2
 import grpc
 import httpx
 from openai import OpenAI
-import pymupdf
-from tavily import TavilyClient
 from minio import Minio
 from minio.error import S3Error
 
 import llm_pb2
 import llm_pb2_grpc
+from auth_interceptor import AuthInterceptor
+from util import (
+    build_user_message, websearch, check_docling_health, convert_to_md
+)
 
 
 # Словил кринж с systemd...
@@ -190,201 +188,6 @@ IMGHDR_TO_MIME = {
 }
 
 
-class AuthInterceptor(grpc.ServerInterceptor):
-    """
-    gRPC Interceptor для проверки авторизации на уровне протокола.
-    
-    Преимущества использования Interceptor вместо проверок в методах:
-    1. Проверка выполняется ДО вызова бизнес-логики (минимум затрат CPU)
-    2. Неавторизованные запросы отклоняются на уровне сети
-    3. Нет дублирования кода в каждом методе
-    4. Легко добавлять публичные методы без авторизации
-    
-    Методы без авторизации (public):
-    - Ping: используется для health-check'ов, должен быть всегда доступен
-    
-    Методы требующие авторизации (protected):
-    - NewMessage: взаимодействие с LLM, критичный ресурс
-    - AvailableModelsText2Text: получение информации о моделях
-    - AvailableModelsSpeech2Text: получение информации о моделях
-    """
-
-    # Методы, которые НЕ требуют авторизацию (public)
-    PUBLIC_METHODS = {
-        '/llm.Llm/Ping',
-    }
-
-    def intercept_service(self, continuation, handler_call_details):
-        """
-        Перехватывает каждый вызов RPC метода.
-        
-        handler_call_details.invocation_metadata содержит метаданные запроса,
-        включая авторизационные заголовки.
-        
-        Метод должен вернуть либо обработанный ответ, либо вызвать
-        continuation() для передачи запроса дальше.
-        """
-        method_name = handler_call_details.method
-
-        # Если метод в списке публичных - пропускаем проверку авторизации
-        if method_name in self.PUBLIC_METHODS:
-            return continuation(handler_call_details)
-
-        # Проверяем наличие авторизационных метаданных
-        metadata = dict(handler_call_details.invocation_metadata or [])
-        authorization = metadata.get('authorization', '')
-
-        # Ожидаем формат "Bearer <SECRET_KEY>" или просто секретный ключ
-        secret_from_header = authorization.replace('Bearer ', '').strip()
-
-        # Проверка секретного ключа
-        if not SECRET_KEY:
-            # Если SECRET_KEY не задан в env - логируем предупреждение
-            # но НЕ отклоняем запрос (для совместимости с dev средой)
-            print(f"SECRET_KEY not set, auth skip for method {method_name}")
-            return continuation(handler_call_details)
-
-        if secret_from_header != SECRET_KEY:
-            # Секретный ключ неверен - отклоняем запрос
-            print(f"UNAUTHORIZED: bad SECRET_KEY for method {method_name}")
-            # Возвращаем обработчик, который всегда абортит вызов
-            def abort_unary_unary(_, context):
-                context.abort(grpc.StatusCode.UNAUTHENTICATED,
-                              "Invalid or missing authorization")
-
-            return grpc.RpcMethodHandler(
-                request_streaming=False,
-                response_streaming=False,
-                unary_unary=abort_unary_unary,
-                unary_stream=None,
-                stream_unary=None,
-                stream_stream=None,
-            )
-
-        # Секретный ключ верен - пропускаем запрос дальше
-        return continuation(handler_call_details)
-
-
-def remote_pdf_to_b64_images(url: str):
-    """
-    Скачивает PDF по URL и преобразовывает MarkDown с base64 картинками
-    """
-    r = requests.get(url)
-    data = r.content
-    doc = pymupdf.Document(stream=data)
-    ret = []
-    for page in doc:
-        pix = page.get_pixmap()  # рендер страницы
-        ret.append(
-            f"data:image/png;base64,{base64.b64encode(
-                pix.tobytes(output="png")).decode("utf-8")}")
-    return ret
-
-
-def image_url_to_base64(url: str) -> str:
-    """
-    Скачивает PNG по URL и преобразовывает в base64 картинку
-    """
-    headers = {
-        "User-Agent": (
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-            "AppleWebKit/537.36 (KHTML, like Gecko) "
-            "Chrome/130.0.0.0 Safari/537.36"
-        )
-    }
-
-    response = requests.get(url, headers=headers, timeout=10)
-    response.raise_for_status()
-    data = response.content
-
-    # Определяем тип изображения по байтам
-    img_type = imghdr.what(None, data)
-    if img_type is None:
-        raise ValueError("Could not detect image type")
-
-    # Получаем MIME
-    mime = IMGHDR_TO_MIME.get(img_type)
-    if not mime:
-        raise ValueError(f"Unsupported image type: {img_type}")
-
-    # Кодируем base64
-    b64 = base64.b64encode(data).decode("utf-8")
-
-    # Возвращает действительный URL-адрес по спецификациям OpenAI.
-    return f"data:{mime};base64,{b64}"
-
-
-def build_user_message(text_message: str, md_docs: dict, images_urls):
-    """Собирает сообщение пользователя для мультимодели.
-
-    Правила:
-    - Если md_docs пуст и images_urls is None -> вернуть простой вариант
-      {"role": "user", "content": text_message}
-    - Если есть изображения, они добавляются в конец content как image_url
-    - Если есть md_docs: каждую md строку помещать в text, но если
-      встречается встроенная base64 картинка (data:image/...), то текущий
-      text закрывается, добавляется image_url c image_url=data:..., и
-      затем начинается новый text.
-    """
-    is_there_images = False
-    # Базовый случай без md и изображений
-    if (not md_docs) and (images_urls is None):
-        return {"role": "user", "content": text_message}, is_there_images
-
-    content = []
-
-    # Обработка markdown документов
-    if md_docs:
-        img_pattern = re.compile(r"data:image/[^;]+;base64,[A-Za-z0-9+/=]+")
-        for filename, md in md_docs.items():
-            if not md:
-                continue
-            if not content:
-                content.append({
-                    "type": "text",
-                    "text": "# FILES ADDED FOR CONTEXT"})
-            # Гарантируем, что у нас есть текущий блок текста
-            current_text = f'# FILE "{filename}" BEGIN\n'
-            last_end = 0
-            for m in img_pattern.finditer(md):
-                is_there_images = True
-                # Текст до изображения
-                text_before = md[last_end:m.start()]
-                if text_before:
-                    current_text += text_before
-                # Если накоплен текст — сохранить блок
-                if current_text:
-                    content.append({"type": "text", "text": current_text})
-                    current_text = ""
-                # Сохранить изображение отдельным блоком
-                data_url = m.group(0)
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": data_url}})
-                last_end = m.end()
-            # Хвостовой текст после последнего изображения
-            tail = md[last_end:]
-            if tail:
-                current_text += tail
-            current_text += f'\n# FILE "{filename}" END'
-            content.append({"type": "text", "text": current_text})
-
-    # Добавление внешних изображений в конце
-    if images_urls:
-        for url in images_urls:
-            if url:
-                is_there_images = True
-                content.append({
-                    "type": "image_url",
-                    "image_url": {"url": image_url_to_base64(url)}})
-
-    # Начальный текст пользователя как text, если он есть
-    if text_message:
-        content.append({"type": "text", "text": text_message})
-
-    return {"role": "user", "content": content}, is_there_images
-
-
 def update_model_to_api(models, new_api):
     """Обновляет глобальную переменную MODEL_TO_API новыми моделями."""
     for model in models:
@@ -470,36 +273,6 @@ def transcribe_audio(audio_buffer: BytesIO,
     return text, proto
 
 
-def websearch(query: str):
-    """Выполняет веб-поиск по запросу и возвращает список результатов."""
-    results = []
-    try:
-        client = TavilyClient(
-            api_key="meow",
-            api_base_url=TAVILY_BASE_URL
-        )
-        response = client.search(
-            query=query,
-            max_results=5,
-            include_raw_content=True,
-            include_images=False,
-            include_favicon=False
-        )
-        results = response["results"]
-    except Exception as e:
-        results = f"An error occurred during search request: {e}"
-    return results, llm_pb2.ToolMetadataResponse(
-        websearch=llm_pb2.ToolWebSearchMetadata(
-            item=[llm_pb2.ToolWebSearchMetadataItem(
-                    url=result["url"],
-                    title=result["title"]
-                )
-                for result
-                in results] if isinstance(results, list) else []
-        )
-    )
-
-
 def image_gen(query: str):
     """Генерирует изображение по запросу и возвращает его URL."""
     result = None
@@ -534,156 +307,23 @@ def call_function(log_uid, name, args):
     """Вызов функции инструмента по имени с аргументами args."""
     print(f"INFO: ({log_uid}) calling {name} with:\n{args}")
     if name == "websearch":
-        result, meta = websearch(**args)
+        result = websearch(**args, tavily_base_url=TAVILY_BASE_URL)
+        meta = llm_pb2.ToolMetadataResponse(
+            websearch=llm_pb2.ToolWebSearchMetadata(
+                item=[llm_pb2.ToolWebSearchMetadataItem(
+                        url=item["url"],
+                        title=item["title"]
+                    )
+                    for item
+                    in result] if isinstance(result, list) else []
+            )
+        )
         return json.dumps(result,
                           ensure_ascii=False), meta
     elif name == "image_gen":
         result, meta = image_gen(**args)
         return result, meta
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
-
-
-async def convert_to_md_async(url: str):
-    """Асинхронно конвертирует документ в markdown через docling API.
-    
-    Поддерживаемые форматы: docx, pptx, html, image, pdf, asciidoc, md, xlsx
-    
-    Returns:
-        Кортеж (filename, md_content) с именем файла и markdown контентом
-        или (None, None) в случае ошибки.
-    """
-    if not DOCLING_ADDRESS:
-        print("ERROR: DOCLING_ADDRESS is not set")
-        return None, None
-
-    filename = ""
-
-    try:
-        # Сначала качаем файл, чтобы узнать его размер в байтах
-        async_client = httpx.AsyncClient(timeout=60.0)
-
-        # Чтобы узнать размер файла, сначала траим HEAD-запрос (эффективнее)
-        original_size = 0
-        try:
-            head_response = await async_client.head(url)
-            original_size = int(head_response.headers['content-length'])
-        except:
-            # Если HEAD не удался, то GET-запрос, но читаем только заголовки
-            get_response = await async_client.get(url)
-            original_size = len(get_response.content)
-        print(f"INFO: original_size={original_size}")
-
-        # Теперь кидаем запрос в API Docling.
-        docling_url = f"http://{DOCLING_ADDRESS}/v1/convert/source"
-        payload = {
-            "options": {
-                "from_formats": ["docx", "pptx", "html", "image", "pdf",
-                                "asciidoc", "md", "xlsx"],
-                "to_formats": ["md"],
-                "image_export_mode": "embedded",
-                "do_ocr": False,
-                "abort_on_error": False,
-            },
-            "sources": [{
-                "kind": "http",
-                "url": url #.replace('localhost', 'minio-2')
-            }]
-        }
-        response = await async_client.post(docling_url, json=payload)
-        data = response.json()
-        filename = urllib.parse.unquote(
-            data.get("document", {"filename":""}).get("filename"))
-        md_content = data.get("document", {}).get("md_content")
-        # Считаем размер md_content в байтах
-        if md_content:
-            md_size = len(md_content.encode('utf-8'))
-            print(f"INFO: md_size={md_size}")
-            if original_size > 3 * md_size:
-                raise AssertionError(
-                    f"Original file size ({original_size} bytes) is more than "
-                    f"3 times greater than markdown size ({md_size} bytes).")
-        return filename, md_content
-    except Exception as e:
-        print(f"ERROR: converting document to md: {e}"[:420])
-        print("INFO: converting document to dumb md...")
-        try:
-            return filename, "\n".join(
-                [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
-                 for i, u
-                 in enumerate(remote_pdf_to_b64_images(url))])
-        except Exception as e2:
-            print(f"ERROR: converting document to dumb md: {e2}"[:420])
-        return None, None
-
-
-async def check_docling_health():
-    """Проверяет доступность docling API.
-    
-    Returns:
-        bool: True если API доступен и отвечает корректно, False иначе.
-    """
-    if not DOCLING_ADDRESS:
-        print("ERROR: DOCLING_ADDRESS is not set")
-        return False
-
-    try:
-        # Используем стандартный health check endpoint
-        health_url = f"http://{DOCLING_ADDRESS}/health"
-        async_client = httpx.AsyncClient(timeout=10.0)
-
-        # Отправляем GET запрос на health endpoint
-        response = await async_client.get(health_url)
-
-        # Проверяем, что сервер отвечает с успешным статусом
-        if response.status_code == 200:
-            # Проверка содержимого ответа, если API возвращает JSON с статусом
-            try:
-                data = response.json()
-                if isinstance(data, dict) and data.get("status") == "ok":
-                    print("Docling health check: OK "
-                          f"(status: {data.get('status')})")
-                else:
-                    print("Docling health check: OK "
-                          f"(status code: {response.status_code})")
-            except (json.JSONDecodeError, ValueError):
-                # Если ответ не JSON, просто проверяем статус код
-                print("Docling health check: OK "
-                      f"(status code: {response.status_code})")
-            return True
-        else:
-            print("Docling health check: FAILED "
-                  f"(status code: {response.status_code})")
-            return False
-    except httpx.ConnectError:
-        print("ERROR: Cannot connect to docling API")
-        return False
-    except httpx.TimeoutException:
-        print("ERROR: Docling API timeout")
-        return False
-    except Exception as e:
-        print(f"ERROR checking docling health: {e}"[:420])
-        return False
-
-
-def convert_to_md(url: str):
-    """Синхронная обёртка для конвертации документа в markdown.
-    
-    Args:
-        url: URL документа для конвертации
-    
-    Returns:
-        Кортеж (filename, md_content) с именем файла и markdown контентом
-        или (None, None) в случае ошибки.
-    """
-    try:
-        eloop = asyncio.new_event_loop()
-        asyncio.set_event_loop(eloop)
-        result = eloop.run_until_complete(convert_to_md_async(url))
-        eloop.close()
-        return result
-    except Exception as e:
-        print(f"ERROR in convert_to_md wrapper: {e}"[:420])
-        return None, None
 
 
 def generate_chat_name(user_message: str):
@@ -811,6 +451,7 @@ def change_model_msgs():
                     datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
                 )
             )]
+
 
 def function_call_responses_from_llm_chunk(chunk, id_="", nm_="", args=""):
     """Преобразует один элемент потока ответа LLM с функцией в один
@@ -1131,7 +772,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             md_docs = dict()
             if documents_urls is not None:
                 for url in documents_urls:
-                    filename, md_content = convert_to_md(url)
+                    filename, md_content = convert_to_md(url, DOCLING_ADDRESS)
                     if filename is None or md_content is None:
                         raise ValueError("Parse file error")
                     md_docs[filename] = md_content
@@ -1160,7 +801,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             # Сборка user_message
             user_message, vlm = build_user_message(user_message,
-                                                   md_docs, images_urls)
+                                                   md_docs, images_urls,
+                                                   IMGHDR_TO_MIME)
 
             # Minio put
             minio_client = Minio(
@@ -1339,7 +981,7 @@ def serve():
     # ПЕРЕД тем как вызвать бизнес-логику метода
     server = grpc.server(
         futures.ThreadPoolExecutor(max_workers=10),
-        interceptors=[AuthInterceptor()]  # Добавляем Interceptor
+        interceptors=[AuthInterceptor(SECRET_KEY)]  # Добавляем Interceptor
     )
 
     llm_pb2_grpc.add_LlmServicer_to_server(
@@ -1357,7 +999,7 @@ if __name__ == "__main__":
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            is_healthy = loop.run_until_complete(check_docling_health())
+            is_healthy = loop.run_until_complete(check_docling_health(DOCLING_ADDRESS))
             loop.close()
             if not is_healthy:
                 print("ERROR: Docling API health check failed.")
