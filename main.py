@@ -10,7 +10,6 @@ from zoneinfo import ZoneInfo
 from concurrent import futures
 from io import BytesIO
 import json
-import logging
 import os
 import re
 import subprocess
@@ -27,6 +26,7 @@ from minio.error import S3Error
 import llm_pb2
 import llm_pb2_grpc
 from auth_interceptor import AuthInterceptor
+from logger import logger
 from util import (
     build_user_message, websearch, check_docling_health, convert_to_md
 )
@@ -305,7 +305,7 @@ def image_gen(query: str):
 
 def call_function(log_uid, name, args):
     """Вызов функции инструмента по имени с аргументами args."""
-    print(f"INFO: ({log_uid}) calling {name} with:\n{args}")
+    logger.debug("(%s) calling %s with: %s", log_uid, name, args)
     if name == "websearch":
         result = websearch(**args, tavily_base_url=TAVILY_BASE_URL)
         meta = llm_pb2.ToolMetadataResponse(
@@ -424,10 +424,10 @@ def build_messages_from_history(history, user_message: str,
                     vlm2 = True
                 messages.append(tmpd)
             except S3Error as e:
-                print(f"Error getting object from MinIO: {e}"[:420])
+                logger.error("Getting object from MinIO: %s", e)
             except json.JSONDecodeError as e:
-                print(f"Error decoding JSON: {e}"[:420])
-            print(f"Get one message: {tmps[:420]}")
+                logger.error("Decoding JSON: %s", e)
+            logger.debug("Get one message: %s", tmps[:420])
     messages.append(user_message)
     return messages, vlm2
 
@@ -609,8 +609,8 @@ def proc_llm_stream_responses(log_uid, messages, tool_choice,
         - response: llm_pb2.NewMessageResponse или None
         - item: объект вызова функции или None
     """
-    print(f"INFO: ({log_uid}) model_to_use is set to {model_to_use or "-"}, "
-          f"tool_choice is set to {tool_choice or "-"}")
+    logger.debug("(%s) model_to_use is set to %s, tool_choice is set to %s",
+          log_uid, model_to_use or '-', tool_choice or '-')
     if tool_choice != "none":
         response = OpenAI(
             base_url=api_to_use,
@@ -674,7 +674,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             t.append(ALL_API_VARS["openaimini"]["model"])
             return llm_pb2.StringsListResponse(strings=t)
         except Exception as e:
-            print(f"ERROR getting text2text models: {e}")
+            logger.error("Getting text2text models: %s", e)
             context.set_details(f"ERROR getting text2text models: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             return llm_pb2.StringsListResponse(strings=[])
@@ -688,7 +688,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                          WHITELIST_REGEX_SPEECH2TEXT,
                                          BLACKLIST_REGEX_SPEECH2TEXT))
         except Exception as e:
-            print(f"ERROR getting speech2text models: {e}")
+            logger.error("Getting speech2text models: %s", e)
             context.set_details(f"ERROR getting speech2text models: {e}")
             context.set_code(grpc.StatusCode.INTERNAL)
             return llm_pb2.StringsListResponse(strings=[])
@@ -720,7 +720,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 raise ValueError("Ни одного аудио чанка не получено!")
             return llm_pb2.TranscribeResponse(transcribe=transcribe_proto)
         except Exception as e:
-            print(f"ERROR: {e}"[:420])
+            logger.error("Transcribe: %s", e)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"ERROR: {e}")
             return llm_pb2.TranscribeResponse(
@@ -743,8 +743,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             history = getattr(request, 'history', [])
             text2text_override = getattr(request, 'text2text_model', None)
             log_uid = str(uuid.uuid4())
-            print(f"INFO: ({log_uid}) text2text_model is set "
-                  f"to {request.text2text_model or "-"}")
+            logger.debug("(%s) text2text_model is set to %s",
+                         log_uid, request.text2text_model or '-')
             function_tool = getattr(request, 'function', None)
             documents_urls = getattr(request, 'documents_urls', None)
             images_urls = getattr(request, 'images_urls', None)
@@ -765,7 +765,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     if chat_name_r is not None:
                         yield llm_pb2.NewMessageResponse(chat_name=chat_name_r)
                 except Exception as e:
-                    print(f"ERROR: ({log_uid}) error generating chat name: {e}")
+                    logger.error("(%s) Error generating chat name: %s",
+                                 log_uid, e)
                     # Не прерываем обработку запроса из-за ошибки имени чата
 
             # Обработка документов
@@ -796,8 +797,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             md_content = response.text
                         md_docs[md_url_obj.original_name] = md_content
                     except Exception as e:
-                        print(f"ERROR: ({log_uid}) error loading md "
-                              f"from {md_url_obj.url}: {e}"[:420])
+                        logger.error("(%s) Error loading md from %s: %s",
+                                     log_uid, md_url_obj.url, e)
 
             # Сборка user_message
             user_message, vlm = build_user_message(user_message,
@@ -826,9 +827,10 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     user_message_uid=object_name
                 )
-                print(f"INFO: ({log_uid}) put user message: {tmps[:420]}")
+                logger.info("(%s) put user message: %s", log_uid, tmps[:420])
             except Exception as e:
-                print(f"ERROR: ({log_uid}) error uploading object: {e}"[:420])
+                logger.error("(%s) error uploading user message object: %s",
+                             log_uid, e)
 
             # Сборка контекста
             messages, vlm2 = build_messages_from_history(history, user_message,
@@ -878,8 +880,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             content += d
                             sumr = len(content)
                         if context.is_active() is False:
-                            print(f"INFO: ({log_uid}) client cancelled, "
-                                  "stopping stream.")
+                            logger.info(
+                                "(%s) client cancelled, stopping stream",
+                                log_uid)
                             break
                         if i is not None:
                             item = i
@@ -893,8 +896,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 item["tool_calls"][0]["function"]["arguments"]
                             )
                         )
-                        print(f"INFO: ({log_uid}) tool out:"
-                               f"\n{result}\n{meta}"[:420])
+                        logger.debug("(%s) tool output: %s\n%s",
+                                     log_uid, result[:420], meta)
                         if meta is not None:
                             yield llm_pb2.NewMessageResponse(
                                 tool_metadata=meta
@@ -916,16 +919,17 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 content += d
                                 sumr = len(content)
                             if context.is_active() is False:
-                                print(f"INFO: ({log_uid}) client cancelled, "
-                                      "stopping stream.")
+                                logger.info(
+                                    "(%s) client cancelled, stopping stream",
+                                    log_uid)
                                 break
                             yield r
                 except Exception as e:
-                    print(f"STREAM ERROR: {e}"[:420])
+                    logger.error("Stream error: %s", e)
                     context.set_code(grpc.StatusCode.INTERNAL)
                     context.set_details(f"STREAM ERROR: {e}")
             else:
-                print(f"INFO: ({log_uid}) client cancelled, stopping stream.")
+                logger.info("(%s) client cancelled, stopping stream", log_uid)
 
             object_name_2 = str(uuid.uuid4())
             if meta is not None and hasattr(
@@ -957,11 +961,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 yield llm_pb2.NewMessageResponse(
                     llm_message_uid=object_name_2
                 )
-                print(f"INFO: ({log_uid}) put llm message: {tmps[:420]}")
+                logger.info("(%s) put llm message: %s", log_uid, tmps)
             except Exception as e:
-                print(f"ERROR: ({log_uid}) error uploading object: {e}"[:420])
+                logger.error("(%s) error uploading llm message object: %s",
+                             log_uid, e)
         except Exception as e:
-            print(f"ERROR: (no-uid) error: {e}"[:420])
+            logger.error("NewMessage error: %s", e)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"ERROR: {e}")
 
@@ -995,32 +1000,33 @@ def serve():
 if __name__ == "__main__":
     # Проверка доступности docling API
     if DOCLING_ADDRESS:
-        print("Checking docling API health...")
+        logger.info("Checking docling API health...")
         try:
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
-            is_healthy = loop.run_until_complete(check_docling_health(DOCLING_ADDRESS))
+            is_healthy = loop.run_until_complete(
+                check_docling_health(DOCLING_ADDRESS))
             loop.close()
             if not is_healthy:
-                print("ERROR: Docling API health check failed.")
+                logger.error("Docling API health check failed")
                 exit(1)
             else:
-                print("Docling API health check passed.")
+                logger.info("Docling API health check passed")
         except Exception as e:
-            print(f"ERROR during docling health check: {e}"[:420])
+            logger.error("Docling health check error: %s", e)
             exit(1)
     else:
-        print("ERROR: Docling API address not set.")
+        logger.error("Docling API address not set")
         exit(1)
 
     # Вывод конфигурации API (ключи скрыты)
     for key, value in ALL_API_VARS.items():
-        print(f"API config for {key}:")
+        logger.info("API config for %s:", key)
         for case_key, case_value in value.items():
             if case_key == "key":
-                print(f"  {case_key}=***")
+                logger.info("  %s=***", case_key)
             else:
-                print(f"  {case_key}={case_value}")
+                logger.info("  %s=%s", case_key, case_value)
     # Проверка конфигурации API
 
     # Уже не пользуемся бтв
@@ -1057,7 +1063,7 @@ if __name__ == "__main__":
     # Скрэппинг цен (prepare.py)
     if GENERATE_CONFIG_WHEN == "always" or (
         GENERATE_CONFIG_WHEN == "missing" and not os.path.exists(CONFIG_PATH)):
-        print("Generating config...")
+        logger.info("Generating config...")
         try:
             subprocess.run(
                 ["/root/.local/bin/uv", "run",
@@ -1065,7 +1071,7 @@ if __name__ == "__main__":
                 check=True
             )
         except Exception as e:
-            print(f"ERROR: config gen fail: {e}")
+            logger.error("Config generation failed: %s", e)
             exit(1)
     try:
         with open(CONFIG_PATH) as f:
@@ -1074,17 +1080,18 @@ if __name__ == "__main__":
             raise ValueError("Invalid config: missing 'generated_at'")
         for name, coef in config.get("prices_coefs", {}).items():
             ALL_API_VARS[name]["price_coef"] = coef
-            print(f"Price coef for {name}: {coef}")
+            logger.info("Price coefficient for %s: %s", name, coef)
     except Exception as e:
-        print(f"ERROR: invalid config: {e}")
+        logger.error("Invalid config: %s", e)
         exit(1)
     # Информация о безопасности
     if SECRET_KEY:
-        print("Authorization ENABLED")
+        logger.info("Authorization ENABLED")
     else:
-        print("Authorization DISABLED - all requests will be accepted!")
+        logger.warning(
+            "Authorization DISABLED - all requests will be accepted!")
     # Проверка доступности моделей
-    print("Checking available models...")
+    logger.info("Checking available models...")
     check_arr = available_models(ALL_API_VARS["yandexai"]["base_url"],
                                  ALL_API_VARS["yandexai"]["key"],
                                  ALL_API_VARS["yandexai"]["folder"],
@@ -1104,15 +1111,14 @@ if __name__ == "__main__":
                                       WHITELIST_REGEX_SPEECH2TEXT,
                                       BLACKLIST_REGEX_SPEECH2TEXT)
     if ALL_API_VARS["yandexai"]["model"] not in check_arr:
-        print(f"ERROR: Text2Text model {ALL_API_VARS["yandexai"]["model"]} "
-              "not found in available models!")
+        logger.error("Text2Text model %s not found",
+                     ALL_API_VARS['yandexai']['model'])
     elif ALL_API_VARS["yandexaisummary"]["model"] not in check_arr:
-        print(f"ERROR: summ model {ALL_API_VARS["yandexaisummary"]["model"]} "
-              "not found in available models!")
+        logger.error("Summary model %s not found",
+                     ALL_API_VARS['yandexaisummary']['model'])
     elif ALL_API_VARS["openai"]["model"] not in check_arr_speech:
-        print(f"ERROR: Speech2Text model {ALL_API_VARS["openai"]["model"]} "
-              "not found in available models!")
+        logger.error("Speech2Text model %s not found",
+                     ALL_API_VARS['openai']['model'])
     else:
-        print("Starting server...")
-        logging.basicConfig()
+        logger.info("Starting server...")
         serve()

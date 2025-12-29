@@ -3,6 +3,7 @@ gRPC Interceptor для проверки авторизации на уровн�
 """
 
 import grpc
+from logger import logger
 
 
 class AuthInterceptor(grpc.ServerInterceptor):
@@ -65,12 +66,13 @@ class AuthInterceptor(grpc.ServerInterceptor):
         if not self.secret_key:
             # Если SECRET_KEY не задан в env - логируем предупреждение
             # но НЕ отклоняем запрос (для совместимости с dev средой)
-            print(f"SECRET_KEY not set, auth skip for method {method_name}")
+            logger.warning("SECRET_KEY not set, auth skip for method %s",
+                           method_name)
             return continuation(handler_call_details)
 
         if secret_from_header != self.secret_key:
             # Секретный ключ неверен - отклоняем запрос
-            print(f"UNAUTHORIZED: bad SECRET_KEY for method {method_name}")
+            logger.error("Bad SECRET_KEY for method %s", method_name)
             # Возвращаем обработчик, который всегда абортит вызов
             def abort_unary_unary(_, context):
                 context.abort(grpc.StatusCode.UNAUTHENTICATED,

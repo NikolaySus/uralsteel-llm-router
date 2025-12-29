@@ -14,6 +14,8 @@ import httpx
 import pymupdf
 from tavily import TavilyClient
 
+from logger import logger
+
 
 def remote_pdf_to_b64_images(url: str):
     """
@@ -68,7 +70,8 @@ def image_url_to_base64(url: str, imghdr_to_mime: dict) -> str:
     return f"data:{mime};base64,{b64}"
 
 
-def build_user_message(text_message: str, md_docs: dict, images_urls, imghdr_to_mime: dict):
+def build_user_message(text_message: str, md_docs: dict,
+                       images_urls, imghdr_to_mime: dict):
     """Собирает сообщение пользователя для мультимодели.
 
     Правила:
@@ -136,7 +139,8 @@ def build_user_message(text_message: str, md_docs: dict, images_urls, imghdr_to_
                 is_there_images = True
                 content.append({
                     "type": "image_url",
-                    "image_url": {"url": image_url_to_base64(url, imghdr_to_mime)}})
+                    "image_url": {
+                        "url": image_url_to_base64(url, imghdr_to_mime)}})
 
     # Начальный текст пользователя как text, если он есть
     if text_message:
@@ -188,7 +192,7 @@ async def convert_to_md_async(url: str, docling_address: str):
         или (None, None) в случае ошибки.
     """
     if not docling_address:
-        print("ERROR: DOCLING_ADDRESS is not set")
+        logger.error("DOCLING_ADDRESS is not set")
         return None, None
 
     filename = ""
@@ -206,7 +210,7 @@ async def convert_to_md_async(url: str, docling_address: str):
             # Если HEAD не удался, то GET-запрос, но читаем только заголовки
             get_response = await async_client.get(url)
             original_size = len(get_response.content)
-        print(f"INFO: original_size={original_size}")
+        logger.debug("original_size=%s", original_size)
 
         # Теперь кидаем запрос в API Docling.
         docling_url = f"http://{docling_address}/v1/convert/source"
@@ -232,23 +236,22 @@ async def convert_to_md_async(url: str, docling_address: str):
         # Считаем размер md_content в байтах
         if md_content:
             md_size = len(md_content.encode('utf-8'))
-            print(f"INFO: md_size={md_size}")
+            logger.debug("md_size=%s", md_size)
             if original_size > 3 * md_size:
                 raise AssertionError(
                     f"Original file size ({original_size} bytes) is more than "
                     f"3 times greater than markdown size ({md_size} bytes).")
         return filename, md_content
     except Exception as e:
-        print(f"ERROR: converting document to md: {e}"[:420])
-        print("INFO: converting document to dumb md...")
+        logger.error("Converting document to md failed: %s", e)
+        logger.info("Falling back to dumb markdown...")
         try:
             return filename, "\n".join(
                 [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
                  for i, u
                  in enumerate(remote_pdf_to_b64_images(url))])
         except Exception as e2:
-            print(f"ERROR: converting document to dumb md: {e2}"[:420])
-        return None, None
+            logger.error("Converting document to dumb markdown failed: %s", e2)
 
 
 async def check_docling_health(docling_address: str):
@@ -261,7 +264,7 @@ async def check_docling_health(docling_address: str):
         bool: True если API доступен и отвечает корректно, False иначе.
     """
     if not docling_address:
-        print("ERROR: DOCLING_ADDRESS is not set")
+        logger.error("DOCLING_ADDRESS is not set")
         return False
 
     try:
@@ -278,28 +281,28 @@ async def check_docling_health(docling_address: str):
             try:
                 data = response.json()
                 if isinstance(data, dict) and data.get("status") == "ok":
-                    print("Docling health check: OK "
-                          f"(status: {data.get('status')})")
+                    logger.info("Docling health check: OK (status: %s)",
+                                data.get('status'))
                 else:
-                    print("Docling health check: OK "
-                          f"(status code: {response.status_code})")
+                    logger.info("Docling health check: OK (status code: %s)",
+                                response.status_code)
             except (json.JSONDecodeError, ValueError):
                 # Если ответ не JSON, просто проверяем статус код
-                print("Docling health check: OK "
-                      f"(status code: {response.status_code})")
+                logger.info("Docling health check: OK (status code: %s)",
+                            response.status_code)
             return True
         else:
-            print("Docling health check: FAILED "
-                  f"(status code: {response.status_code})")
+            logger.error("Docling health check: FAILED (status code: %s)",
+                         response.status_code)
             return False
     except httpx.ConnectError:
-        print("ERROR: Cannot connect to docling API")
+        logger.error("Cannot connect to docling API")
         return False
     except httpx.TimeoutException:
-        print("ERROR: Docling API timeout")
+        logger.error("Docling API timeout")
         return False
     except Exception as e:
-        print(f"ERROR checking docling health: {e}"[:420])
+        logger.error("Checking docling health failed: %s", e)
         return False
 
 
@@ -317,9 +320,10 @@ def convert_to_md(url: str, docling_address: str):
     try:
         eloop = asyncio.new_event_loop()
         asyncio.set_event_loop(eloop)
-        result = eloop.run_until_complete(convert_to_md_async(url, docling_address))
+        result = eloop.run_until_complete(
+            convert_to_md_async(url, docling_address))
         eloop.close()
         return result
     except Exception as e:
-        print(f"ERROR in convert_to_md wrapper: {e}"[:420])
+        logger.error("Convert to markdown wrapper failed: %s", e)
         return None, None
