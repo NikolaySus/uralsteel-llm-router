@@ -71,7 +71,7 @@ MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '5'))
 GENERATE_CONFIG_WHEN = os.environ.get('GENERATE_CONFIG_WHEN', 'missing')
 # docling-serve
 DOCLING_ADDRESS = os.environ.get('DOCLING_ADDRESS', '')
-# -
+# Размер чанка MarkDown версий документов
 CHUNK_SIZE = int(os.environ.get('CHUNK_SIZE', 8192))
 # Регулярные выражения для фильтрации моделей
 WHITELIST_REGEX_TEXT2TEXT  = os.environ.get('WHITELIST_REGEX_TEXT2TEXT', '.*')
@@ -128,6 +128,7 @@ RESTRICTIONS = (
   Always respond as a neutral, factual assistant.
 """
 )
+# Костыль для пустого openai usage
 USAGE_FIX = 3.6
 # Инструменты для моделей с поддержкой функций
 TOOLS = [
@@ -296,20 +297,20 @@ def image_url_to_base64(url: str) -> str:
     response.raise_for_status()
     data = response.content
 
-    # Detect image type from bytes
+    # Определяем тип изображения по байтам
     img_type = imghdr.what(None, data)
     if img_type is None:
         raise ValueError("Could not detect image type")
 
-    # Get MIME
+    # Получаем MIME
     mime = IMGHDR_TO_MIME.get(img_type)
     if not mime:
         raise ValueError(f"Unsupported image type: {img_type}")
 
-    # Encode base64
+    # Кодируем base64
     b64 = base64.b64encode(data).decode("utf-8")
 
-    # Return valid OpenAI data URL
+    # Возвращает действительный URL-адрес по спецификациям OpenAI.
     return f"data:{mime};base64,{b64}"
 
 
@@ -558,21 +559,21 @@ async def convert_to_md_async(url: str):
     filename = ""
 
     try:
-        # First, download the file to get its size in bytes
+        # Сначала качаем файл, чтобы узнать его размер в байтах
         async_client = httpx.AsyncClient(timeout=60.0)
 
-        # Get the file size by making a HEAD request first (more efficient)
+        # Чтобы узнать размер файла, сначала траим HEAD-запрос (эффективнее)
         original_size = 0
         try:
             head_response = await async_client.head(url)
             original_size = int(head_response.headers['content-length'])
         except:
-            # If HEAD fails, try GET but only read headers
+            # Если HEAD не удался, то GET-запрос, но читаем только заголовки
             get_response = await async_client.get(url)
             original_size = len(get_response.content)
         print(f"INFO: original_size={original_size}")
 
-        # Now send to docling API
+        # Теперь кидаем запрос в API Docling.
         docling_url = f"http://{DOCLING_ADDRESS}/v1/convert/source"
         payload = {
             "options": {
@@ -593,7 +594,7 @@ async def convert_to_md_async(url: str):
         filename = urllib.parse.unquote(
             data.get("document", {"filename":""}).get("filename"))
         md_content = data.get("document", {}).get("md_content")
-        # Calculate the size of md_content in bytes (as if written to file)
+        # Считаем размер md_content в байтах
         if md_content:
             md_size = len(md_content.encode('utf-8'))
             print(f"INFO: md_size={md_size}")
@@ -824,7 +825,6 @@ def function_call_responses_from_llm_chunk(chunk, id_="", nm_="", args=""):
     if hasattr(chunk, "object") and (
         chunk.object == "chat.completion.chunk" and
         hasattr(chunk, "choices") and chunk.choices):
-        # print("WARN: object")
         choice0 = chunk.choices[0]
         delta = getattr(choice0, "delta", None)
         if delta and hasattr(delta, "tool_calls"):
@@ -950,8 +950,7 @@ def responses_from_llm_chunk(chunk, summ, sumr):
             )
         ), delta_content
     else:
-        # Не удалось разобрать часть ответа
-        # print(f"WARN: {chunk}")
+        # Скип
         return None, None
 
 
