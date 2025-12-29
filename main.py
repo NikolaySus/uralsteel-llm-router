@@ -506,8 +506,8 @@ def image_gen(query: str):
     image_base64 = None
     try:
         client = OpenAI(
-            api_key=ALL_API_VARS["openai"]["key"],
-            base_url=ALL_API_VARS["openai"]["base_url"],
+            api_key=ALL_API_VARS["openaiimgen"]["key"],
+            base_url=ALL_API_VARS["openaiimgen"]["base_url"],
         )
 
         response = client.images.generate(
@@ -729,7 +729,7 @@ def generate_chat_name(user_message: str):
     prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
     completion_tokens = getattr(response.usage, "completion_tokens", 0)
     total_tokens = getattr(response.usage, "total_tokens", 0)
-    usd = ALL_API_VARS["yandexaisummary"]["price_coef"] * total_tokens
+    usd = ALL_API_VARS["openaimini"]["price_coef"] * total_tokens
     return llm_pb2.ChatNameResponseType(name=name_c,
                                         prompt_tokens=prompt_tokens,
                                         completion_tokens=completion_tokens,
@@ -1380,22 +1380,38 @@ if __name__ == "__main__":
             else:
                 print(f"  {case_key}={case_value}")
     # Проверка конфигурации API
+
+    # Уже не пользуемся бтв
     assert ALL_API_VARS["yandexaisummary"]["model"], "summary model is n/a"
     assert ALL_API_VARS["yandexaisummary"]["prices_url"], "sum cost is n/a"
+    assert ALL_API_VARS["yandexaisummary"]["base_url"], "sum base url is n/a"
+    assert ALL_API_VARS["yandexaisummary"]["key"], "sum api key is n/a"
+    assert ALL_API_VARS["yandexaisummary"]["folder"], "sum folder is n/a"
+
+    # Остальные используем
     assert ALL_API_VARS["yandexai"]["prices_url"], "yandexai prices url is n/a"
     assert ALL_API_VARS["yandexai"]["base_url"], "yandexai base url is n/a"
     assert ALL_API_VARS["yandexai"]["key"], "yandexai api key is n/a"
     assert ALL_API_VARS["yandexai"]["model"], "yandexai model is n/a"
     assert ALL_API_VARS["yandexai"]["folder"], "yandexai folder is n/a"
+
     assert ALL_API_VARS["openai"]["prices_url"], "openai prices url is n/a"
     assert ALL_API_VARS["openai"]["base_url"], "openai base url is n/a"
     assert ALL_API_VARS["openai"]["key"], "openai api key is n/a"
     assert ALL_API_VARS["openai"]["model"], "openai model is n/a"
+
     assert ALL_API_VARS["openaiimgen"]["prices_url"], "openai prices url is n/a"
     assert ALL_API_VARS["openaiimgen"]["model"], "openai model is n/a"
+    assert ALL_API_VARS["openaiimgen"]["base_url"], "openai base url is n/a"
+    assert ALL_API_VARS["openaiimgen"]["key"], "openai api key is n/a"
+
     assert ALL_API_VARS["openaivlm"]["prices_url"], "openai prices url is n/a"
     assert ALL_API_VARS["openaivlm"]["model"], "openai model is n/a"
+    assert ALL_API_VARS["openaivlm"]["base_url"], "openai base url is n/a"
+    assert ALL_API_VARS["openaivlm"]["key"], "openai api key is n/a"
+
     assert ALL_API_VARS["gptmetal"]["model"], "gptmetal model is n/a"
+    assert ALL_API_VARS["gptmetal"]["base_url"], "gptmetal base url is n/a"
     # Скрэппинг цен (prepare.py)
     if GENERATE_CONFIG_WHEN == "always" or (
         GENERATE_CONFIG_WHEN == "missing" and not os.path.exists(CONFIG_PATH)):
