@@ -1,10 +1,10 @@
 """
-Logging configuration for the gRPC LLM router service.
+Конфигурация логирования для сервиса маршрутизации LLM через gRPC.
 
-Works with:
-- systemd (uses standard output, compatible with journalctl)
-- Docker (outputs to stdout/stderr)
-- CLI (human-readable format)
+Работает в различных средах:
+- systemd (использует стандартный вывод, совместим с journalctl)
+- Docker (вывод в stdout/stderr)
+- CLI (читаемый формат с метками времени)
 """
 
 import logging
@@ -14,57 +14,58 @@ import os
 
 def setup_logger(name: str = "llm-router") -> logging.Logger:
     """
-    Configure and return a logger instance.
+    Настройка и возврат экземпляра логгера.
     
-    The logger is configured to work optimally in different environments:
-    - systemd: Uses INFO level, outputs to stdout (captured by journalctl)
-    - Docker: Uses INFO level, outputs to stdout with timestamps
-    - CLI: Uses INFO level, readable format with timestamps
+    Логгер настроен для оптимальной работы в разных средах:
+    - systemd: уровень INFO, вывод в stdout (перехватывается journalctl)
+    - Docker: уровень INFO, вывод в stdout с метками времени
+    - CLI: уровень INFO, читаемый формат с метками времени
     
-    Args:
-        name: Logger name (default: "llm-router")
+    Аргументы:
+        name: Имя логгера (по умолчанию: "llm-router")
     
-    Returns:
-        Configured logger instance
+    Возвращает:
+        Настроенный экземпляр логгера
     """
     logger = logging.getLogger(name)
-    
-    # Avoid adding multiple handlers if setup_logger is called multiple times
+
+    # Предотвращаем добавление нескольких обработчиков при повторном вызове setup_logger
     if logger.handlers:
         return logger
-    
-    # Determine log level from environment or default to INFO
+
+    # Определяем уровень логирования из переменных окружения или используем INFO по умолчанию
     log_level_str = os.environ.get('LOG_LEVEL', 'INFO').upper()
     try:
         log_level = getattr(logging, log_level_str)
     except AttributeError:
         log_level = logging.INFO
-    
+
     logger.setLevel(log_level)
-    
-    # Create formatter
-    # Format: TIMESTAMP [LEVEL] MESSAGE
-    # Systemd doesn't need timestamp (journalctl adds it), but Docker/CLI benefits from it
+
+    # Создаем форматтер
+    # Формат: ВРЕМЯ [УРОВЕНЬ] СООБЩЕНИЕ
+    # Systemd не требует меток времени (journalctl добавляет их),
+    # но Docker/CLI выигрывают от их наличия
     formatter = logging.Formatter(
         '%(asctime)s [%(levelname)s] %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S'
     )
-    
-    # Create and configure stdout handler
-    # Use stdout for all levels (systemd captures stdout as regular logs)
+
+    # Создаем и настраиваем обработчик для stdout
+    # Используем stdout для всех уровней (systemd перехватывает stdout как обычные логи)
     stdout_handler = logging.StreamHandler(sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
     stdout_handler.setFormatter(formatter)
     logger.addHandler(stdout_handler)
-    
-    # Create and configure stderr handler only for ERROR and CRITICAL
+
+    # Создаем и настраиваем обработчик для stderr только для ERROR и CRITICAL
     stderr_handler = logging.StreamHandler(sys.stderr)
     stderr_handler.setLevel(logging.ERROR)
     stderr_handler.setFormatter(formatter)
     logger.addHandler(stderr_handler)
-    
+
     return logger
 
 
-# Create global logger instance that can be imported
+# Создаем глобальный экземпляр логгера для импорта
 logger = setup_logger()
