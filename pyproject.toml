@@ -17,3 +17,6 @@ dependencies = [
     "tavily-python>=0.7.13",
     "tzdata>=2025.3",
 ]
+
+[tool.pylint.format]
+max-line-length = 80

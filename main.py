@@ -86,28 +86,42 @@ MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
 # Дополнительные системные подсказки для моделей
 TYPICAL_SITUATIONS_SOLVING_PROMPT = (
 """If the user asks to create document, follow these rules:
-- If the user asks to create, generate, draft, write, or output a document (e.g., report, contract, policy, specification, letter, instructions, manual, article, or similar),
-  your response MUST contain ONLY the document content itself.
-- DO NOT add explanations, comments, notes, suggestions, warnings, summaries, or introductory/outro text.
+- If the user asks to create, generate, draft, write, or output a document
+  (e.g., report, contract, policy, specification, letter, instructions, manual,
+  article, or similar), your response MUST contain
+  ONLY the document content itself.
+- DO NOT add explanations, comments, notes, suggestions, warnings, summaries,
+  or introductory/outro text.
 - DO NOT mention that the text was generated, exported, or formatted.
-- Use Markdown syntax for structure (headings, lists, tables, emphasis) where appropriate.
-- NEVER wrap the document content in Markdown code blocks (```), inline code, or quoted blocks.
-- Output the document as direct, top-level Markdown content, suitable for immediate Markdown-to-PDF conversion.
+- Use Markdown syntax for structure (headings, lists, tables, emphasis)
+  where appropriate.
+- NEVER wrap the document content in Markdown code blocks (```),
+  inline code, or quoted blocks.
+- Output the document as direct, top-level Markdown content,
+  suitable for immediate Markdown-to-PDF conversion.
 """
 )
 RESTRICTIONS = (
 """Restrictions:
-- STRICTLY FORBIDDEN: violence, murder, physical harm, threats, or instructions enabling harm, including fictional or historical descriptions focused on violent acts.
-- STRICTLY FORBIDDEN: sensitive social or identity-related topics, including religion, religious beliefs or figures, gender identity, sexual orientation, sexuality, or any content likely to cause ideological, moral, or identity-based conflict.
+- STRICTLY FORBIDDEN: violence, murder, physical harm, threats, or instructions
+  enabling harm, including fictional or historical descriptions
+  focused on violent acts.
+- STRICTLY FORBIDDEN: sensitive social or identity-related topics,
+  including religion, religious beliefs or figures, gender identity,
+  sexual orientation, sexuality, or any content likely to cause ideological,
+  moral, or identity-based conflict.
 - Political or military content is NOT globally forbidden.
   However, you MUST NOT discuss political, military, or geopolitical topics
-  related to the Russian Federation, the Soviet Union (USSR), or the Russian Empire.
+  related to the Russian Federation, the Soviet Union (USSR),
+  or the Russian Empire.
 - For all other regions or historical periods:
   - You MAY provide neutral, factual, non-advocacy information.
-  - You MUST NOT express opinions, persuasion, propaganda, or normative judgments.
+  - You MUST NOT express opinions, persuasion, propaganda,
+    or normative judgments.
   - Military content, if allowed, must be high-level and non-operational.
-- Geographic, scientific, environmental, cultural, and non-violent historical topics
-  are allowed, even if they indirectly intersect with politics or treaties.
+- Geographic, scientific, environmental, cultural, and non-violent
+  historical topics are allowed, even if they indirectly intersect with
+  politics or treaties.
 - If a request violates these rules, politely refuse ONLY the restricted part
   and, when possible, redirect to a safe, neutral alternative.
 - You MUST NOT engage in roleplay, impersonation, or fictional personas.
@@ -233,15 +247,9 @@ class AuthInterceptor(grpc.ServerInterceptor):
             # Секретный ключ неверен - отклоняем запрос
             print(f"UNAUTHORIZED: bad SECRET_KEY for method {method_name}")
             # Возвращаем обработчик, который всегда абортит вызов
-            def abort_unary_unary(request, context):
+            def abort_unary_unary(_, context):
                 context.abort(grpc.StatusCode.UNAUTHENTICATED,
                               "Invalid or missing authorization")
-
-            def abort_unary_stream(request, context):
-                context.abort(grpc.StatusCode.UNAUTHENTICATED,
-                              "Invalid or missing authorization")
-                if False:
-                    yield  # pragma: no cover
 
             return grpc.RpcMethodHandler(
                 request_streaming=False,
@@ -257,18 +265,25 @@ class AuthInterceptor(grpc.ServerInterceptor):
 
 
 def remote_pdf_to_b64_images(url: str):
+    """
+    Скачивает PDF по URL и преобразовывает MarkDown с base64 картинками
+    """
     r = requests.get(url)
     data = r.content
     doc = pymupdf.Document(stream=data)
     ret = []
-    for page in doc:  # iterate through the pages
-        pix = page.get_pixmap()  # render page to an image
-        ret.append(f"data:image/png;base64,{base64.b64encode(pix.tobytes(output="png")).decode("utf-8")}")
+    for page in doc:
+        pix = page.get_pixmap()  # рендер страницы
+        ret.append(
+            f"data:image/png;base64,{base64.b64encode(
+                pix.tobytes(output="png")).decode("utf-8")}")
     return ret
 
 
 def image_url_to_base64(url: str) -> str:
-    # Download image
+    """
+    Скачивает PNG по URL и преобразовывает в base64 картинку
+    """
     headers = {
         "User-Agent": (
             "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
@@ -324,7 +339,9 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
             if not md:
                 continue
             if not content:
-                content.append({"type": "text", "text": "# FILES ADDED FOR CONTEXT"})
+                content.append({
+                    "type": "text",
+                    "text": "# FILES ADDED FOR CONTEXT"})
             # Гарантируем, что у нас есть текущий блок текста
             current_text = f'# FILE "{filename}" BEGIN\n'
             last_end = 0
@@ -340,7 +357,9 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
                     current_text = ""
                 # Сохранить изображение отдельным блоком
                 data_url = m.group(0)
-                content.append({"type": "image_url", "image_url": {"url": data_url}})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": data_url}})
                 last_end = m.end()
             # Хвостовой текст после последнего изображения
             tail = md[last_end:]
@@ -354,7 +373,9 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
         for url in images_urls:
             if url:
                 is_there_images = True
-                content.append({"type": "image_url", "image_url": {"url": image_url_to_base64(url)}})
+                content.append({
+                    "type": "image_url",
+                    "image_url": {"url": image_url_to_base64(url)}})
 
     # Начальный текст пользователя как text, если он есть
     if text_message:
@@ -363,10 +384,10 @@ def build_user_message(text_message: str, md_docs: dict, images_urls):
     return {"role": "user", "content": content}, is_there_images
 
 
-def update_model_to_api(models, api):
+def update_model_to_api(models, new_api):
     """Обновляет глобальную переменную MODEL_TO_API новыми моделями."""
     for model in models:
-        MODEL_TO_API[model] = api
+        MODEL_TO_API[model] = new_api
 
 
 def available_models(base_url: str,
@@ -394,14 +415,14 @@ def available_models(base_url: str,
         api_key=api_key,
         project=project,
     ).models.list()
-    check_arr = []
+    check_arr_ret = []
     for model in models_list.data:
         model_id = getattr(model, "id", "")
         if not model_id:
             continue
         if wl.search(model_id) and not bl.search(model_id):
-            check_arr.append(model_id)
-    return check_arr
+            check_arr_ret.append(model_id)
+    return check_arr_ret
 
 
 def transcribe_audio(audio_buffer: BytesIO,
@@ -464,7 +485,6 @@ def websearch(query: str):
             include_favicon=False
         )
         results = response["results"]
-        # print(results)
     except Exception as e:
         results = f"An error occurred during search request: {e}"
     return results, llm_pb2.ToolMetadataResponse(
@@ -496,7 +516,9 @@ def image_gen(query: str):
         )
 
         image_base64 = response.data[0].b64_json
-        result = "The image has been generated, everything is fine. Do not say that you can't generate the image, you have already done this if you see this message."
+        result = ("The image has been generated, everything is fine. "
+                  "Do not say that you can't generate the image, you "
+                  "have already done this if you see this message.")
     except Exception as e:
         result = f"An error occurred during image gen request: {e}"
     return result, llm_pb2.ToolMetadataResponse(
@@ -568,21 +590,26 @@ async def convert_to_md_async(url: str):
         }
         response = await async_client.post(docling_url, json=payload)
         data = response.json()
-        filename = urllib.parse.unquote(data.get("document", {"filename":""}).get("filename"))
+        filename = urllib.parse.unquote(
+            data.get("document", {"filename":""}).get("filename"))
         md_content = data.get("document", {}).get("md_content")
         # Calculate the size of md_content in bytes (as if written to file)
         if md_content:
             md_size = len(md_content.encode('utf-8'))
             print(f"INFO: md_size={md_size}")
-            # Check if original file size is more than 3 times greater than md_content size
             if original_size > 3 * md_size:
-                raise AssertionError(f"Original file size ({original_size} bytes) is more than 3 times greater than markdown size ({md_size} bytes).")
+                raise AssertionError(
+                    f"Original file size ({original_size} bytes) is more than "
+                    f"3 times greater than markdown size ({md_size} bytes).")
         return filename, md_content
     except Exception as e:
         print(f"ERROR: converting document to md: {e}"[:420])
         print("INFO: converting document to dumb md...")
         try:
-            return filename, "\n".join([f"## PAGE {i}\n\n![page {i}]({u})\n\n" for i, u in enumerate(remote_pdf_to_b64_images(url))])
+            return filename, "\n".join(
+                [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
+                 for i, u
+                 in enumerate(remote_pdf_to_b64_images(url))])
         except Exception as e2:
             print(f"ERROR: converting document to dumb md: {e2}"[:420])
         return None, None
@@ -592,35 +619,39 @@ async def check_docling_health():
     """Проверяет доступность docling API.
     
     Returns:
-        bool: True если API доступен и отвечает корректно, False в противном случае.
+        bool: True если API доступен и отвечает корректно, False иначе.
     """
     if not DOCLING_ADDRESS:
         print("ERROR: DOCLING_ADDRESS is not set")
         return False
-    
+
     try:
         # Используем стандартный health check endpoint
         health_url = f"http://{DOCLING_ADDRESS}/health"
         async_client = httpx.AsyncClient(timeout=10.0)
-        
+
         # Отправляем GET запрос на health endpoint
         response = await async_client.get(health_url)
-        
+
         # Проверяем, что сервер отвечает с успешным статусом
         if response.status_code == 200:
-            # Можно также проверить содержимое ответа, если API возвращает JSON с статусом
+            # Проверка содержимого ответа, если API возвращает JSON с статусом
             try:
                 data = response.json()
                 if isinstance(data, dict) and data.get("status") == "ok":
-                    print(f"Docling health check: OK (status: {data.get('status')})")
+                    print("Docling health check: OK "
+                          f"(status: {data.get('status')})")
                 else:
-                    print(f"Docling health check: OK (status code: {response.status_code})")
+                    print("Docling health check: OK "
+                          f"(status code: {response.status_code})")
             except (json.JSONDecodeError, ValueError):
                 # Если ответ не JSON, просто проверяем статус код
-                print(f"Docling health check: OK (status code: {response.status_code})")
+                print("Docling health check: OK "
+                      f"(status code: {response.status_code})")
             return True
         else:
-            print(f"Docling health check: FAILED (status code: {response.status_code})")
+            print("Docling health check: FAILED "
+                  f"(status code: {response.status_code})")
             return False
     except httpx.ConnectError:
         print("ERROR: Cannot connect to docling API")
@@ -644,10 +675,10 @@ def convert_to_md(url: str):
         или (None, None) в случае ошибки.
     """
     try:
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        result = loop.run_until_complete(convert_to_md_async(url))
-        loop.close()
+        eloop = asyncio.new_event_loop()
+        asyncio.set_event_loop(eloop)
+        result = eloop.run_until_complete(convert_to_md_async(url))
+        eloop.close()
         return result
     except Exception as e:
         print(f"ERROR in convert_to_md wrapper: {e}"[:420])
@@ -744,9 +775,11 @@ def build_messages_from_history(history, user_message: str,
         )
         for message_uuid in history:
             try:
-                tmps = minio_client.get_object(BUCKET_NAME, message_uuid).read().decode('utf-8')
+                tmps = minio_client.get_object(
+                    BUCKET_NAME, message_uuid).read().decode('utf-8')
                 tmpd = json.loads(tmps)
-                if isinstance(tmpd["content"], list) and any("image_url" in item for item in tmpd["content"]):
+                if isinstance(tmpd["content"], list) and any(
+                    "image_url" in item for item in tmpd["content"]):
                     vlm2 = True
                 messages.append(tmpd)
             except S3Error as e:
@@ -778,7 +811,7 @@ def change_model_msgs():
                 )
             )]
 
-def function_call_responses_from_llm_chunk(chunk, id="", name="", args=""):
+def function_call_responses_from_llm_chunk(chunk, id_="", nm_="", args=""):
     """Преобразует один элемент потока ответа LLM с функцией в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     
@@ -835,25 +868,25 @@ def function_call_responses_from_llm_chunk(chunk, id="", name="", args=""):
                             args += arguments
                             return llm_pb2.NewMessageResponse(
                                 function_call_delta=llm_pb2.FunctionCallDelta(
-                                    id=id,
+                                    id=id_,
                                     content=arguments
                                 )
-                            ), None, id, name, args
+                            ), None, id_, nm_, args
             elif delta.tool_calls is None and finish_reason == 'tool_calls':
                 return llm_pb2.NewMessageResponse(
                     function_call_complete=llm_pb2.FunctionCallComplete(
-                        id=id,
-                        name=name,
+                        id=id_,
+                        name=nm_,
                         arguments=args
                     )
                 ), {
                     "role": "assistant",
                     "tool_calls": [
                         {
-                        "id": id,
+                        "id": id_,
                         "type": "function",
                         "function": {
-                            "name": name,
+                            "name": nm_,
                             "arguments": args
                         }
                         }
@@ -923,7 +956,8 @@ def responses_from_llm_chunk(chunk, summ, sumr):
 
 
 def proc_llm_stream_responses(log_uid, messages, tool_choice,
-                              api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr):
+                              api_to_use, key_to_use, dir_to_use,
+                              model_to_use, summ, sumr):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
@@ -935,12 +969,13 @@ def proc_llm_stream_responses(log_uid, messages, tool_choice,
         - response: llm_pb2.NewMessageResponse или None
         - item: объект вызова функции или None
     """
-    print(f"INFO: ({log_uid}) model_to_use is set to {model_to_use or "-"}, tool_choice is set to {tool_choice or "-"}")
+    print(f"INFO: ({log_uid}) model_to_use is set to {model_to_use or "-"}, "
+          f"tool_choice is set to {tool_choice or "-"}")
     if tool_choice != "none":
         response = OpenAI(
             base_url=api_to_use,
             api_key=key_to_use,
-            project=folder_to_use,
+            project=dir_to_use,
         ).chat.completions.create(
             model=model_to_use,
             messages=messages,
@@ -953,7 +988,7 @@ def proc_llm_stream_responses(log_uid, messages, tool_choice,
         response = OpenAI(
             base_url=api_to_use,
             api_key=key_to_use,
-            project=folder_to_use,
+            project=dir_to_use,
         ).chat.completions.create(
             model=model_to_use,
             messages=messages,
@@ -961,15 +996,17 @@ def proc_llm_stream_responses(log_uid, messages, tool_choice,
             stream_options={"include_usage": True},
         )
     try:
-        id = ""
-        name = ""
+        id_ = ""
+        nm_ = ""
         args = ""
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
-            resp, item, id, name, args = function_call_responses_from_llm_chunk(chunk, id, name, args)
+            resp, item, id_, nm_, args = function_call_responses_from_llm_chunk(
+                chunk, id_, nm_, args)
             delta_content = None
             if resp is None:
-                resp, delta_content = responses_from_llm_chunk(chunk, summ, sumr)
+                resp, delta_content = responses_from_llm_chunk(
+                    chunk, summ, sumr)
             if resp is not None:
                 yield (resp, item, delta_content)
     finally:
@@ -995,8 +1032,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             t.append(ALL_API_VARS["gptmetal"]["model"])
             t.append(ALL_API_VARS["deepseek"]["model"])
             t.append(ALL_API_VARS["openaimini"]["model"])
-            return llm_pb2.StringsListResponse(
-                strings=t)
+            return llm_pb2.StringsListResponse(strings=t)
         except Exception as e:
             print(f"ERROR getting text2text models: {e}")
             context.set_details(f"ERROR getting text2text models: {e}")
@@ -1021,24 +1057,27 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
         """Получить список доступных инструментов/функций."""
         return llm_pb2.StringsListResponse(strings=TOOLS_NAMES)
 
-    def Transcribe(self, request_iter, context):
+    def Transcribe(self, request_iterator, context):
         """Транскрибация аудио без генерации текста.
-        Принимает поток TranscribeRequest с mp3_chunk и опциональной speech2text_model.
+        Принимает поток TranscribeRequest с mp3_chunk и опциональной
+        speech2text_model.
         Возвращает одиночный TranscribeResponse.
         """
         try:
             audio_buffer = BytesIO()
             speech2text_override = None
 
-            for request in request_iter:
-                if speech2text_override is None and getattr(request, 'speech2text_model', None):
+            for request in request_iterator:
+                if speech2text_override is None and getattr(
+                    request, 'speech2text_model', None):
                     speech2text_override = request.speech2text_model
                 if getattr(request, 'mp3_chunk', None):
                     audio_buffer.write(request.mp3_chunk)
 
-            _, transcribe_proto = transcribe_audio(audio_buffer, speech2text_override)
+            _, transcribe_proto = transcribe_audio(audio_buffer,
+                                                   speech2text_override)
             if transcribe_proto is None:
-                raise ValueError("Ни одного аудио чанка не получено для транскрибации")
+                raise ValueError("Ни одного аудио чанка не получено!")
             return llm_pb2.TranscribeResponse(transcribe=transcribe_proto)
         except Exception as e:
             print(f"ERROR: {e}"[:420])
@@ -1061,14 +1100,15 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
         try:
             # Извлекаем поля из одиночного запроса
             user_message = request.msg
-            history = request.history if request.history else []
-            text2text_override = request.text2text_model if request.text2text_model else None
+            history = getattr(request, 'history', [])
+            text2text_override = getattr(request, 'text2text_model', None)
             log_uid = str(uuid.uuid4())
-            print(f"INFO: ({log_uid}) text2text_model is set to {request.text2text_model or "-"}")
-            function_tool = request.function if request.function else None
-            documents_urls = request.documents_urls if request.documents_urls else None
-            images_urls = request.images_urls if request.images_urls else None
-            markdown_urls = request.markdown_urls if request.markdown_urls else None
+            print(f"INFO: ({log_uid}) text2text_model is set "
+                  f"to {request.text2text_model or "-"}")
+            function_tool = getattr(request, 'function', None)
+            documents_urls = getattr(request, 'documents_urls', None)
+            images_urls = getattr(request, 'images_urls', None)
+            markdown_urls = getattr(request, 'markdown_urls', None)
 
             # Если сообщение пусто, ошибка
             if not user_message:
@@ -1081,9 +1121,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Если это новый чат (история пуста), генерируем название
             if not history:
                 try:
-                    chat_name_resp = generate_chat_name(user_message)
-                    if chat_name_resp is not None:
-                        yield llm_pb2.NewMessageResponse(chat_name=chat_name_resp)
+                    chat_name_r = generate_chat_name(user_message)
+                    if chat_name_r is not None:
+                        yield llm_pb2.NewMessageResponse(chat_name=chat_name_r)
                 except Exception as e:
                     print(f"ERROR: ({log_uid}) error generating chat name: {e}")
                     # Не прерываем обработку запроса из-за ошибки имени чата
@@ -1116,7 +1156,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             md_content = response.text
                         md_docs[md_url_obj.original_name] = md_content
                     except Exception as e:
-                        print(f"ERROR: ({log_uid}) error loading md from {md_url_obj.url}: {e}"[:420])
+                        print(f"ERROR: ({log_uid}) error loading md "
+                              f"from {md_url_obj.url}: {e}"[:420])
 
             # Сборка user_message
             user_message, vlm = build_user_message(user_message,
@@ -1155,17 +1196,18 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Определяем модель для запроса
             if text2text_override:
                 model_to_use = text2text_override
-                if (vlm or vlm2) and model_to_use != ALL_API_VARS["openaivlm"]["model"]:
+                if ((vlm or vlm2) and
+                    model_to_use != ALL_API_VARS["openaivlm"]["model"]):
                     for msg in change_model_msgs():
                         yield msg
                     return
-            elif (vlm or vlm2):
+            elif vlm or vlm2:
                 model_to_use = ALL_API_VARS["openaivlm"]["model"]
             else:
                 model_to_use = ALL_API_VARS["yandexai"]["model"]
             api_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["base_url"]
             key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
-            folder_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
+            dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
 
             # Определяем инструмент функции
             if function_tool is None:
@@ -1188,13 +1230,15 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         summ += len(message.get("content", ""))
                     sumr = 0
                     for r, i, d in proc_llm_stream_responses(
-                        log_uid, messages, function_tool, api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
+                        log_uid, messages, function_tool, api_to_use,
+                        key_to_use, dir_to_use, model_to_use, summ, sumr
                     ):
                         if d is not None:
                             content += d
                             sumr = len(content)
                         if context.is_active() is False:
-                            print(f"INFO: ({log_uid}) client cancelled, stopping stream.")
+                            print(f"INFO: ({log_uid}) client cancelled, "
+                                  "stopping stream.")
                             break
                         if i is not None:
                             item = i
@@ -1208,7 +1252,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 item["tool_calls"][0]["function"]["arguments"]
                             )
                         )
-                        print(f"INFO: ({log_uid}) tool out:\n{result}\n{meta}"[:420])
+                        print(f"INFO: ({log_uid}) tool out:"
+                               f"\n{result}\n{meta}"[:420])
                         if meta is not None:
                             yield llm_pb2.NewMessageResponse(
                                 tool_metadata=meta
@@ -1223,13 +1268,15 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             summ += len(message.get("content", ""))
                         sumr = 0
                         for r, i, d in proc_llm_stream_responses(
-                            log_uid, messages, "none", api_to_use, key_to_use, folder_to_use, model_to_use, summ, sumr
+                            log_uid, messages, "none", api_to_use, key_to_use,
+                            dir_to_use, model_to_use, summ, sumr
                         ):
                             if d is not None:
                                 content += d
                                 sumr = len(content)
                             if context.is_active() is False:
-                                print(f"INFO: ({log_uid}) client cancelled, stopping stream.")
+                                print(f"INFO: ({log_uid}) client cancelled, "
+                                      "stopping stream.")
                                 break
                             yield r
                 except Exception as e:
@@ -1240,7 +1287,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 print(f"INFO: ({log_uid}) client cancelled, stopping stream.")
 
             object_name_2 = str(uuid.uuid4())
-            if meta is not None and hasattr(meta, "image_gen") and meta.image_gen.image_base64:
+            if meta is not None and hasattr(
+                meta, "image_gen") and meta.image_gen.image_base64:
                 content = [
                     {
                         "type": "text",
@@ -1248,7 +1296,10 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     },
                     {
                         "type": "image_url",
-                        "image_url": { "url": "data:image/png;base64," + meta.image_gen.image_base64 }
+                        "image_url":
+                        {
+                            "url": "data:image/png;base64," + meta.image_gen.image_base64
+                        }
                     }
                 ]
             tmps = json.dumps({"role": "assistant", "content": content})
