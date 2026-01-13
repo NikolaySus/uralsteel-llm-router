@@ -1030,11 +1030,11 @@ if __name__ == "__main__":
     # Проверка конфигурации API
 
     # Уже не пользуемся бтв
-    assert ALL_API_VARS["yandexaisummary"]["model"], "summary model is n/a"
-    assert ALL_API_VARS["yandexaisummary"]["prices_url"], "sum cost is n/a"
-    assert ALL_API_VARS["yandexaisummary"]["base_url"], "sum base url is n/a"
-    assert ALL_API_VARS["yandexaisummary"]["key"], "sum api key is n/a"
-    assert ALL_API_VARS["yandexaisummary"]["folder"], "sum folder is n/a"
+    # assert ALL_API_VARS["yandexaisummary"]["model"], "summary model is n/a"
+    # assert ALL_API_VARS["yandexaisummary"]["prices_url"], "sum cost is n/a"
+    # assert ALL_API_VARS["yandexaisummary"]["base_url"], "sum base url is n/a"
+    # assert ALL_API_VARS["yandexaisummary"]["key"], "sum api key is n/a"
+    # assert ALL_API_VARS["yandexaisummary"]["folder"], "sum folder is n/a"
 
     # Остальные используем
     assert ALL_API_VARS["yandexai"]["prices_url"], "yandexai prices url is n/a"
@@ -1113,9 +1113,9 @@ if __name__ == "__main__":
     if ALL_API_VARS["yandexai"]["model"] not in check_arr:
         logger.error("Text2Text model %s not found",
                      ALL_API_VARS['yandexai']['model'])
-    elif ALL_API_VARS["yandexaisummary"]["model"] not in check_arr:
-        logger.error("Summary model %s not found",
-                     ALL_API_VARS['yandexaisummary']['model'])
+    # elif ALL_API_VARS["yandexaisummary"]["model"] not in check_arr:
+    #     logger.error("Summary model %s not found",
+    #                  ALL_API_VARS['yandexaisummary']['model'])
     elif ALL_API_VARS["openai"]["model"] not in check_arr_speech:
         logger.error("Speech2Text model %s not found",
                      ALL_API_VARS['openai']['model'])
