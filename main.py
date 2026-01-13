@@ -153,7 +153,7 @@ then ask him to select the appropriate tool using the plus button
 next to the text input field.
 If there is no suitable tool, inform the user about it.
 If the user asks what you can do,
-pay attention to the presence of the above tools, but do NOT mention ACTUAL NAMES and:
+pay attention to the presence of the above tools, BUT DO NOT MENTION ACTUAL NAMES OF THE TOOLS and:
 IF TOOLS ARE NOT PROVIDED, DO NOT ATTEMPT TO USE THEM! THIS MEANS THE USER DID NOT SELECT ANY TOOL.
 IN THIS CASE YOU MUST RESPONSE WITH INFORMATION ABOUT PLUS BUTTON! EXAMPLE: "Please, use the plus button next to the text input field"
 """
