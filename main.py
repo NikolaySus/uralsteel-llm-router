@@ -81,51 +81,6 @@ MINIO_ADDRESS = os.environ.get('MINIO_ADDRESS', '')
 BUCKET_NAME = os.environ.get('BUCKET_NAME', 'cache')
 MINIO_ACCESS_KEY = os.environ.get('MINIO_ACCESS_KEY', None)
 MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
-# Дополнительные системные подсказки для моделей
-TYPICAL_SITUATIONS_SOLVING_PROMPT = (
-"""If the user asks to create document, follow these rules:
-- If the user asks to create, generate, draft, write, or output a document
-  (e.g., report, contract, policy, specification, letter, instructions, manual,
-  article, or similar), your response MUST contain
-  ONLY the document content itself.
-- DO NOT add explanations, comments, notes, suggestions, warnings, summaries,
-  or introductory/outro text.
-- DO NOT mention that the text was generated, exported, or formatted.
-- Use Markdown syntax for structure (headings, lists, tables, emphasis)
-  where appropriate.
-- NEVER wrap the document content in Markdown code blocks (```),
-  inline code, or quoted blocks.
-- Output the document as direct, top-level Markdown content,
-  suitable for immediate Markdown-to-PDF conversion.
-"""
-)
-RESTRICTIONS = (
-"""Restrictions:
-- STRICTLY FORBIDDEN: violence, murder, physical harm, threats, or instructions
-  enabling harm, including fictional or historical descriptions
-  focused on violent acts.
-- STRICTLY FORBIDDEN: sensitive social or identity-related topics,
-  including religion, religious beliefs or figures, gender identity,
-  sexual orientation, sexuality, or any content likely to cause ideological,
-  moral, or identity-based conflict.
-- Political or military content is NOT globally forbidden.
-  However, you MUST NOT discuss political, military, or geopolitical topics
-  related to the Russian Federation, the Soviet Union (USSR),
-  or the Russian Empire.
-- For all other regions or historical periods:
-  - You MAY provide neutral, factual, non-advocacy information.
-  - You MUST NOT express opinions, persuasion, propaganda,
-    or normative judgments.
-  - Military content, if allowed, must be high-level and non-operational.
-- Geographic, scientific, environmental, cultural, and non-violent
-  historical topics are allowed, even if they indirectly intersect with
-  politics or treaties.
-- If a request violates these rules, politely refuse ONLY the restricted part
-  and, when possible, redirect to a safe, neutral alternative.
-- You MUST NOT engage in roleplay, impersonation, or fictional personas.
-  Always respond as a neutral, factual assistant.
-"""
-)
 # Костыль для пустого openai usage
 USAGE_FIX = 3.6
 # Инструменты для моделей с поддержкой функций
@@ -171,6 +126,71 @@ TOOLS = [
 TOOLS_NAMES = [
     tool["function"]["name"] for tool in TOOLS
 ]
+# Пояснения инструментов
+TOOLS_SUMMARY = "\n".join([
+    f"- {tool["function"]["name"]}: {tool["function"]["description"]}"
+    for tool in TOOLS
+])
+# Дополнительные системные подсказки для моделей
+TYPICAL_SITUATIONS_SOLVING_PROMPT = (
+"""If the user asks to create document, follow these rules:
+- If the user asks to create, generate, draft, write, or output a document
+  (e.g., report, contract, policy, specification, letter, instructions, manual,
+  article, or similar), your response MUST contain
+  ONLY the document content itself.
+- DO NOT add explanations, comments, notes, suggestions, warnings, summaries,
+  or introductory/outro text.
+- DO NOT mention that the text was generated, exported, or formatted.
+- Use Markdown syntax for structure (headings, lists, tables, emphasis)
+  where appropriate.
+- NEVER wrap the document content in Markdown code blocks (```),
+  inline code, or quoted blocks.
+- Output the document as direct, top-level Markdown content,
+  suitable for immediate Markdown-to-PDF conversion.
+If the user asks to do something that requires the following tools:
+""" + TOOLS_SUMMARY + """
+then ask him to select the appropriate tool using the plus button
+next to the text input field.
+If there is no suitable tool, inform the user about it.
+"""
+)
+RESTRICTIONS = (
+"""Restrictions:
+- STRICTLY FORBIDDEN: violence, murder, physical harm, threats, or instructions
+  enabling harm, including fictional or historical descriptions
+  focused on violent acts.
+- STRICTLY FORBIDDEN: sensitive social or identity-related topics,
+  including religion, religious beliefs or figures, gender identity,
+  sexual orientation, sexuality, or any content likely to cause ideological,
+  moral, or identity-based conflict.
+- Political or military content is NOT globally forbidden.
+  However, you MUST NOT discuss political, military, or geopolitical topics
+  related to the Russian Federation, the Soviet Union (USSR),
+  or the Russian Empire.
+- For all other regions or historical periods:
+  - You MAY provide neutral, factual, non-advocacy information.
+  - You MUST NOT express opinions, persuasion, propaganda,
+    or normative judgments.
+  - Military content, if allowed, must be high-level and non-operational.
+- Geographic, scientific, environmental, cultural, and non-violent
+  historical topics are allowed, even if they indirectly intersect with
+  politics or treaties.
+- If a request violates these rules, politely refuse ONLY the restricted part
+  and, when possible, redirect to a safe, neutral alternative.
+- You MUST NOT engage in roleplay, impersonation, or fictional personas.
+  Always respond as a neutral, factual assistant.
+"""
+)
+NEED_VLM_WARNING = {
+    "role": "system",
+    "content": """WARNING: USER REQUEST CONTAINS PICTURES,
+BUT YOU ARE NOT ABLE TO SEE THEM CURRENTLY,
+YOU MUST WARN THE USER ABOUT THIS,
+TELL THAT YOU WILL IGNORE THEM,
+MENTION THAT GPT-5.2 IS ABLE TO SEE PICTURES
+AND USER CAN SWITCH TO IT IN THE LEFT UPPER CORNER.
+"""
+}
 # url -> base64
 IMGHDR_TO_MIME = {
     "jpeg": "image/jpeg",
@@ -835,14 +855,15 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             messages, vlm2 = build_messages_from_history(history, user_message,
                                                          text2text_override)
 
-            # Определяем модель для запроса
+            # Определяем модель и нужно ли предупреждение об игноре картинок
             if text2text_override:
                 model_to_use = text2text_override
-                if ((vlm or vlm2) and
+                if (vlm and #((vlm or vlm2) and
                     model_to_use != ALL_API_VARS["openaivlm"]["model"]):
-                    for msg in change_model_msgs():
-                        yield msg
-                    return
+                    messages.append(NEED_VLM_WARNING)
+                    # for msg in change_model_msgs():
+                    #     yield msg
+                    # return
             elif vlm or vlm2:
                 model_to_use = ALL_API_VARS["openaivlm"]["model"]
             else:
