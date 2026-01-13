@@ -155,8 +155,7 @@ If there is no suitable tool, inform the user about it.
 If the user asks what you can do,
 pay attention to the presence of the above tools.
 ATTENTION! IF TOOLS ARE NOT PROVIDED, DO NOT ATTEMPT TO USE THEM!
-THIS MEANS THE USER DID NOT SELECT ANY TOOL!
-EXPLAIN TO THE USER WHAT THE PROBLEM IS!
+THIS MEANS THE USER DID NOT SELECT ANY TOOL, EXPLAIN THIS TO THE USER!
 """
 )
 RESTRICTIONS = (
