@@ -152,6 +152,8 @@ If the user asks to do something that requires the following tools:
 then ask him to select the appropriate tool using the plus button
 next to the text input field.
 If there is no suitable tool, inform the user about it.
+If the user asks what you can do,
+pay attention to the presence of the above tools.
 """
 )
 RESTRICTIONS = (
