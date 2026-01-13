@@ -263,6 +263,7 @@ async def check_docling_health(docling_address: str):
     Returns:
         bool: True если API доступен и отвечает корректно, False иначе.
     """
+    logger.info("Docling check on: %s", docling_address)
     if not docling_address:
         logger.error("DOCLING_ADDRESS is not set")
         return False
