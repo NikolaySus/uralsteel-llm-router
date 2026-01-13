@@ -155,7 +155,7 @@ If there is no suitable tool, inform the user about it.
 If the user asks what you can do,
 pay attention to the presence of the above tools, BUT:
 ATTENTION! IF TOOLS ARE NOT PROVIDED, DO NOT ATTEMPT TO USE THEM! THIS MEANS THE USER DID NOT SELECT ANY TOOL.
-# IN THIS CASE YOU MUST TELL ABOUT PLUS BUTTON, WITH WHICH THE USER CAN SELECT A TOOL AND TOOLS WILL BE AVAILABLE!
+IN THIS CASE YOU MUST RESPONSE WITH INFORMATION ABOUT PLUS BUTTON! EXAMPLE: "Please, use the plus button next to the text input field"
 """
 )
 RESTRICTIONS = (
