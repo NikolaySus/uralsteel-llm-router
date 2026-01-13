@@ -154,6 +154,7 @@ next to the text input field.
 If there is no suitable tool, inform the user about it.
 If the user asks what you can do,
 pay attention to the presence of the above tools.
+ATTENTION! IF NO TOOLS PROVIDED, DO NOT TRY TO CALL ANY!
 """
 )
 RESTRICTIONS = (
