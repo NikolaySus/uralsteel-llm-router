@@ -669,7 +669,6 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                          WHITELIST_REGEX_TEXT2TEXT,
                                          BLACKLIST_REGEX_TEXT2TEXT)
             t.append(ALL_API_VARS["openaivlm"]["model"])
-            t.append(ALL_API_VARS["gptmetal"]["model"])
             t.append(ALL_API_VARS["deepseek"]["model"])
             t.append(ALL_API_VARS["openaimini"]["model"])
             return llm_pb2.StringsListResponse(strings=t)
@@ -1028,15 +1027,6 @@ if __name__ == "__main__":
             else:
                 logger.info("  %s=%s", case_key, case_value)
     # Проверка конфигурации API
-
-    # Уже не пользуемся бтв
-    # assert ALL_API_VARS["yandexaisummary"]["model"], "summary model is n/a"
-    # assert ALL_API_VARS["yandexaisummary"]["prices_url"], "sum cost is n/a"
-    # assert ALL_API_VARS["yandexaisummary"]["base_url"], "sum base url is n/a"
-    # assert ALL_API_VARS["yandexaisummary"]["key"], "sum api key is n/a"
-    # assert ALL_API_VARS["yandexaisummary"]["folder"], "sum folder is n/a"
-
-    # Остальные используем
     assert ALL_API_VARS["yandexai"]["prices_url"], "yandexai prices url is n/a"
     assert ALL_API_VARS["yandexai"]["base_url"], "yandexai base url is n/a"
     assert ALL_API_VARS["yandexai"]["key"], "yandexai api key is n/a"
@@ -1058,8 +1048,6 @@ if __name__ == "__main__":
     assert ALL_API_VARS["openaivlm"]["base_url"], "openai base url is n/a"
     assert ALL_API_VARS["openaivlm"]["key"], "openai api key is n/a"
 
-    assert ALL_API_VARS["gptmetal"]["model"], "gptmetal model is n/a"
-    assert ALL_API_VARS["gptmetal"]["base_url"], "gptmetal base url is n/a"
     # Скрэппинг цен (prepare.py)
     if GENERATE_CONFIG_WHEN == "always" or (
         GENERATE_CONFIG_WHEN == "missing" and not os.path.exists(CONFIG_PATH)):
@@ -1100,8 +1088,6 @@ if __name__ == "__main__":
     update_model_to_api(check_arr, "yandexai")
     check_arr.append(ALL_API_VARS["openaivlm"]["model"])
     update_model_to_api([ALL_API_VARS["openaivlm"]["model"]], "openaivlm")
-    check_arr.append(ALL_API_VARS["gptmetal"]["model"])
-    update_model_to_api([ALL_API_VARS["gptmetal"]["model"]], "gptmetal")
     check_arr.append(ALL_API_VARS["deepseek"]["model"])
     update_model_to_api([ALL_API_VARS["deepseek"]["model"]], "deepseek")
     check_arr.append(ALL_API_VARS["openaimini"]["model"])
@@ -1113,9 +1099,6 @@ if __name__ == "__main__":
     if ALL_API_VARS["yandexai"]["model"] not in check_arr:
         logger.error("Text2Text model %s not found",
                      ALL_API_VARS['yandexai']['model'])
-    # elif ALL_API_VARS["yandexaisummary"]["model"] not in check_arr:
-    #     logger.error("Summary model %s not found",
-    #                  ALL_API_VARS['yandexaisummary']['model'])
     elif ALL_API_VARS["openai"]["model"] not in check_arr_speech:
         logger.error("Speech2Text model %s not found",
                      ALL_API_VARS['openai']['model'])
