@@ -884,6 +884,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     "type": "function",
                     "function": {"name" : function_tool}
                 }
+            logger.info("(%s) TOOL: %s", log_uid, str(function_tool))
 
             # Отправка запроса в OpenAI API на генерацию ответа, если
             # пользователь не отменял запрос
