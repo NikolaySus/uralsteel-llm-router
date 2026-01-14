@@ -148,15 +148,16 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
 - Output the document as direct, top-level Markdown content,
   suitable for immediate Markdown-to-PDF conversion.
 If the user asks to do something that requires the following tools:
-""" + TOOLS_SUMMARY + """
-then ask him to select the appropriate tool using the plus button
-next to the text input field.
-If there is no suitable tool, inform the user about it.
-If the user asks what you can do,
-pay attention to the presence of the above tools, but:
-IF TOOLS ARE NOT PROVIDED, DO NOT ATTEMPT TO USE THEM! THIS MEANS THE USER DID NOT SELECT ANY TOOL.
-IN THIS CASE YOU MUST RESPONSE WITH INFORMATION ABOUT PLUS BUTTON! EXAMPLE: "Please, use the plus button next to the text input field"
 """
+# + TOOLS_SUMMARY + """
+# then ask him to select the appropriate tool using the plus button
+# next to the text input field.
+# If there is no suitable tool, inform the user about it.
+# If the user asks what you can do,
+# pay attention to the presence of the above tools, but:
+# IF TOOLS ARE NOT PROVIDED, DO NOT ATTEMPT TO USE THEM! THIS MEANS THE USER DID NOT SELECT ANY TOOL.
+# IN THIS CASE YOU MUST RESPONSE WITH INFORMATION ABOUT PLUS BUTTON! EXAMPLE: "Please, use the plus button next to the text input field"
+# """
 )
 RESTRICTIONS = (
 """Restrictions:
