@@ -147,8 +147,9 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
   inline code, or quoted blocks.
 - Output the document as direct, top-level Markdown content,
   suitable for immediate Markdown-to-PDF conversion.
-If the user asks to do something that requires the following tools:
 """
+# If the user asks to do something that requires the following tools:
+# """
 # + TOOLS_SUMMARY + """
 # then ask him to select the appropriate tool using the plus button
 # next to the text input field.
