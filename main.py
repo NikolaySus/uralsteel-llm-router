@@ -635,7 +635,7 @@ def proc_llm_stream_responses(log_uid, messages, tool_choice,
         - response: llm_pb2.NewMessageResponse или None
         - item: объект вызова функции или None
     """
-    logger.debug("(%s) model_to_use is set to %s, tool_choice is set to %s",
+    logger.info("(%s) model_to_use is set to %s, tool_choice is set to %s",
           log_uid, model_to_use or '-', tool_choice or '-')
     if tool_choice != "none":
         response = OpenAI(
