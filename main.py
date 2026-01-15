@@ -997,8 +997,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"ERROR: {e}")
 
-        # for lh in logger.handlers:
-        #     lh.flush()
+        for lh in logger.handlers:
+            lh.flush()
 
 
 def serve():
