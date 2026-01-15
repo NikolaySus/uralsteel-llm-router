@@ -884,7 +884,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             # Определяем инструмент функции
             if function_tool is None or not function_tool:
-                function_tool = "none"  # пока без "auto" живём, надо тестить
+                function_tool = "auto"  # "none"  # пока без "auto" живём, надо тестить
             else:
                 function_tool = {
                     "type": "function",
