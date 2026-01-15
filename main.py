@@ -879,7 +879,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
 
             # Определяем инструмент функции
-            if function_tool is None:
+            if function_tool is None or not function_tool:
                 function_tool = "auto" # "none"  # пока без "auto" живём, бэку тяжело
             else:
                 function_tool = {
