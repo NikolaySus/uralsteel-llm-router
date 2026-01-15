@@ -108,7 +108,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "image_gen",
-            "description": "Generate an image by query and get it's url.",
+            "description": "Generate a 1024x1024 square image based on the query and get its url.",
             "strict": True,
             "parameters": {
                 "type": "object",
