@@ -480,7 +480,7 @@ def change_model_msgs():
             )]
 
 
-def function_call_responses_from_llm_chunk(chunk, id_="", nm_="", args=""):
+def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=""):
     """Преобразует один элемент потока ответа LLM с функцией в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     
@@ -563,7 +563,7 @@ def function_call_responses_from_llm_chunk(chunk, id_="", nm_="", args=""):
     return None, None, None, None, None
 
 
-def responses_from_llm_chunk(chunk, summ, sumr):
+def responses_from_llm_chunk(log_uid, chunk, summ, sumr):
     """Преобразует один элемент потока ответа LLM в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     """
@@ -593,6 +593,8 @@ def responses_from_llm_chunk(chunk, summ, sumr):
         completion_tokens = getattr(usage, "completion_tokens", None)
         prompt_tokens = getattr(usage, "prompt_tokens", None)
         total_tokens = getattr(usage, "total_tokens", None)
+        logger.info("(%s) completion_tokens %s, prompt_tokens %s, total_tokens %s",
+            log_uid, completion_tokens or '-', prompt_tokens or '-', total_tokens or '-')
 
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
     if (finish_reason == "stop" and delta_content is None) or (
@@ -669,11 +671,11 @@ def proc_llm_stream_responses(log_uid, messages, tool_choice,
         for chunk in response:
             # Преобразуем chunk в один ответ protobuf (или None)
             resp, item, id_, nm_, args = function_call_responses_from_llm_chunk(
-                chunk, id_, nm_, args)
+                log_uid, chunk, id_, nm_, args)
             delta_content = None
             if resp is None:
                 resp, delta_content = responses_from_llm_chunk(
-                    chunk, summ, sumr)
+                    log_uid, chunk, summ, sumr)
             if resp is not None:
                 yield (resp, item, delta_content)
     finally:
