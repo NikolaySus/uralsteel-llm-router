@@ -996,6 +996,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             logger.error("NewMessage error: %s", e)
             context.set_code(grpc.StatusCode.INTERNAL)
             context.set_details(f"ERROR: {e}")
+        
+        for lh in logger.handlers:
+            lh.flush()
 
 
 def serve():
