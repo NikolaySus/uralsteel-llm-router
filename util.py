@@ -17,6 +17,39 @@ from tavily import TavilyClient
 from logger import logger
 
 
+def get_messages_wo_b64_images(messages):
+    """Removes all base64-encoded images from messages.
+    
+    Modifies messages in-place, removing all image_url content blocks
+    that contain data URLs (base64 images) while keeping text blocks
+    and other content.
+    
+    Args:
+        messages: List of messages in OpenAI API format. Each message
+                 is a dict with "role" and "content" keys. Content can be
+                 either a string or a list of content blocks.
+    """
+    for message in messages:
+        if isinstance(message, dict) and "content" in message:
+            content = message["content"]
+            # If content is a list of content blocks
+            if isinstance(content, list):
+                # Filter out image_url blocks with base64 data
+                filtered_content = []
+                for block in content:
+                    if isinstance(block, dict):
+                        # Keep text blocks and other non-image content
+                        if block.get("type") != "image_url":
+                            filtered_content.append(block)
+                        # Keep image_url only if it's not a base64 data URL
+                        elif block.get("type") == "image_url":
+                            image_url = block.get("image_url", {}).get("url", "")
+                            # Only remove if it's a data URL (base64)
+                            if not image_url.startswith("data:"):
+                                filtered_content.append(block)
+                message["content"] = filtered_content
+
+
 def remote_pdf_to_b64_images(url: str):
     """
     Скачивает PDF по URL и преобразовывает MarkDown с base64 картинками

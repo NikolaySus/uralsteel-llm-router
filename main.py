@@ -28,7 +28,8 @@ import llm_pb2_grpc
 from auth_interceptor import AuthInterceptor
 from logger import logger
 from util import (
-    build_user_message, websearch, check_docling_health, convert_to_md
+    build_user_message, websearch, check_docling_health, convert_to_md,
+    get_messages_wo_b64_images
 )
 
 
@@ -866,6 +867,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 model_to_use = text2text_override
                 if (vlm and #((vlm or vlm2) and
                     model_to_use != ALL_API_VARS["openaivlm"]["model"]):
+                    get_messages_wo_b64_images(messages)
                     messages.append(NEED_VLM_WARNING)
                     # for msg in change_model_msgs():
                     #     yield msg
