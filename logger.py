@@ -12,6 +12,17 @@ import sys
 import os
 
 
+class AutoFlushStreamHandler(logging.StreamHandler):
+    """StreamHandler с автоматическим flush после каждого log message."""
+    
+    def emit(self, record):
+        try:
+            super().emit(record)
+            self.flush()
+        except Exception:
+            self.handleError(record)
+
+
 def setup_logger(name: str = "llm-router") -> logging.Logger:
     """
     Настройка и возврат экземпляра логгера.
@@ -53,13 +64,13 @@ def setup_logger(name: str = "llm-router") -> logging.Logger:
 
     # Создаем и настраиваем обработчик для stdout
     # Используем stdout для всех уровней (systemd перехватывает stdout как обычные логи)
-    stdout_handler = logging.StreamHandler(sys.stdout)
+    stdout_handler = AutoFlushStreamHandler(sys.stdout)
     stdout_handler.setLevel(logging.DEBUG)
     stdout_handler.setFormatter(formatter)
     logger.addHandler(stdout_handler)
 
     # Создаем и настраиваем обработчик для stderr только для ERROR и CRITICAL
-    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler = AutoFlushStreamHandler(sys.stderr)
     stderr_handler.setLevel(logging.ERROR)
     stderr_handler.setFormatter(formatter)
     logger.addHandler(stderr_handler)
