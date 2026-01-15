@@ -867,7 +867,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Определяем модель и нужно ли предупреждение об игноре картинок
             if text2text_override:
                 model_to_use = text2text_override
-                if (vlm and #((vlm or vlm2) and
+                if ((vlm or vlm2) and
                     model_to_use != ALL_API_VARS["openaivlm"]["model"]):
                     get_messages_wo_b64_images(messages)
                     messages.append(NEED_VLM_WARNING)
