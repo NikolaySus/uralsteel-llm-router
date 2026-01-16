@@ -217,6 +217,14 @@ IMGHDR_TO_MIME = {
 }
 
 
+def tools_whitelist_by_model(model_name):
+    """Возвращает список инструментов, разрешённых для модели model_name."""
+    api_ = MODEL_TO_API.get(model_name, None)
+    if api_ is None:
+        return []
+    return ALL_API_VARS.get(api_, {}).get("tools", [])
+
+
 def update_model_to_api(models, new_api):
     """Обновляет глобальную переменную MODEL_TO_API новыми моделями."""
     for model in models:
@@ -725,8 +733,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
     def AvailableTools(self, request, context):
         """Получить список доступных инструментов/функций."""
-        # TODO: add optional name arg, read whitelist by name or None
-        return llm_pb2.StringsListResponse(strings=TOOLS_NAMES)
+        model_name = getattr(request, 'model', None)
+        if model_name:
+            tools = tools_whitelist_by_model(model_name)
+        else:
+            tools = TOOLS_NAMES
+        return llm_pb2.StringsListResponse(strings=tools)
 
     def Transcribe(self, request_iterator, context):
         """Транскрибация аудио без генерации текста.
@@ -885,15 +897,20 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
             dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
 
-            # TODO: add whitelist check function an call it here
+            tools = tools_whitelist_by_model(model_to_use)
             # Определяем инструмент функции
             if function_tool is None or not function_tool:
                 function_tool = "auto"  # "none"  # пока без "auto" живём, надо тестить
-            else:
+                if not tools:
+                    function_tool = "none"
+            elif function_tool in tools:
                 function_tool = {
                     "type": "function",
                     "function": {"name" : function_tool}
                 }
+            else:
+                raise ValueError(f"Tool {function_tool} not allowed for "
+                                 f"model {model_to_use}")
             logger.info("(%s) TOOL: %s", log_uid, str(function_tool))
 
             # Отправка запроса в OpenAI API на генерацию ответа, если
