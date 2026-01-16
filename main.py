@@ -725,6 +725,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
     def AvailableTools(self, request, context):
         """Получить список доступных инструментов/функций."""
+        # TODO: add optional name arg, read whitelist by name or None
         return llm_pb2.StringsListResponse(strings=TOOLS_NAMES)
 
     def Transcribe(self, request_iterator, context):
@@ -884,6 +885,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
             dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
 
+            # TODO: add whitelist check function an call it here
             # Определяем инструмент функции
             if function_tool is None or not function_tool:
                 function_tool = "auto"  # "none"  # пока без "auto" живём, надо тестить
