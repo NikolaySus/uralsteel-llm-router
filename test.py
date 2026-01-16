@@ -1,6 +1,7 @@
 """Интеграционные тесты для gRPC LLM сервиса с авторизацией."""
 
 import base64
+import json
 import os
 import tempfile
 import unittest
@@ -18,6 +19,11 @@ import llm_pb2_grpc
 
 SERVER_ADDRESS = os.environ.get('SERVER_ADDRESS', 'localhost:50051')
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
+INFERENCE_API_OPENAIVLM_MODEL = os.environ.get('INFERENCE_API_OPENAIVLM_MODEL', '')
+INFERENCE_API_OPENAIVLM_TOOLS = json.loads(os.environ.get('INFERENCE_API_OPENAIVLM_TOOLS', '[]'))
+INFERENCE_API_DEEPSEEK_MODEL = os.environ.get('INFERENCE_API_DEEPSEEK_MODEL', '')
+INFERENCE_API_DEEPSEEK_TOOLS = json.loads(os.environ.get('INFERENCE_API_DEEPSEEK_TOOLS', '[]'))
+
 TEST_MESSAGE = "Придумай имя для персонажа D&D. Это хаотично-добрый молодой эльф маг (парень), который почти всю свою молодость провёл в лабораториях за магическими изысканиями. Конечный ответ должен содержать только один наилучший вариант имени."
 TEST_MESSAGE_SERIAL = "Подскажи какой сериал посмотреть интересненький."
 TEST_MESSAGE_WITH_HISTORY = "Хм, звучит знакомо, а не существовало ли главных героев с таким именем в фэнтэзийных книгах? Поищи в интернете"
@@ -372,7 +378,7 @@ class TestLlmService(unittest.TestCase):
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text with history failed: {e}")
-    comment = '''
+
     def test_06_transcribe_audio_no_history(self):
         """Тест 6: Transcribe с потоком mp3 чанков без истории -
            требует авторизацию."""
@@ -473,32 +479,72 @@ class TestLlmService(unittest.TestCase):
 
     def test_09_available_tools(self):
         """Тест 9: AvailableTools - требует авторизацию.
-           Получить список доступных инструментов/функций."""
+           Получить список доступных инструментов/функций с проверкой
+           инструментов для конкретных моделей."""
         print("")
         try:
             stub = llm_pb2_grpc.LlmStub(
                 grpc.secure_channel(SERVER_ADDRESS, CREDS))
-            # Передаём авторизационный заголовок
-            response = stub.AvailableTools(
-                google_dot_protobuf_dot_empty__pb2.Empty(),
+
+            # Тест 1: AvailableTools БЕЗ модели (все инструменты)
+            print("\n1. Получение всех инструментов (без модели)")
+            response_all = stub.AvailableTools(
+                llm_pb2.AvailableToolsRequest(model=None),
                 metadata=get_metadata()
             )
-
-            print("✓ Успешно получен список инструментов")
-            print(f"Количество инструментов: {len(response.strings)}")
-            if response.strings:
-                print("Список инструментов:")
-                for tool in response.strings:
-                    print(f"  - {tool}")
-
-            self.assertIsNotNone(response)
-            self.assertGreater(len(response.strings), 0,
+            print("✓ Успешно получен список всех инструментов")
+            print(f"  Количество: {len(response_all.strings)}")
+            if response_all.strings:
+                print("  Инструменты:", response_all.strings)
+            self.assertIsNotNone(response_all)
+            self.assertGreater(len(response_all.strings), 0,
                                "Список инструментов не должен быть пустым")
+
+            # Тест 2: AvailableTools для INFERENCE_API_OPENAIVLM_MODEL
+            if INFERENCE_API_OPENAIVLM_MODEL:
+                print(f"\n2. Получение инструментов для модели {INFERENCE_API_OPENAIVLM_MODEL}")
+                response_vlm = stub.AvailableTools(
+                    llm_pb2.AvailableToolsRequest(model=INFERENCE_API_OPENAIVLM_MODEL),
+                    metadata=get_metadata()
+                )
+                print(f"✓ Успешно получены инструменты для VLM модели")
+                print(f"  Количество: {len(response_vlm.strings)}")
+                print(f"  Полученные инструменты: {response_vlm.strings}")
+                print(f"  Ожидаемые инструменты: {INFERENCE_API_OPENAIVLM_TOOLS}")
+
+                if INFERENCE_API_OPENAIVLM_TOOLS:
+                    # Проверяем, что полученные инструменты совпадают с ожидаемыми
+                    self.assertEqual(sorted(response_vlm.strings), sorted(INFERENCE_API_OPENAIVLM_TOOLS),
+                                   f"Инструменты для {INFERENCE_API_OPENAIVLM_MODEL} не совпадают с ожиданием")
+                    print("  ✓ Инструменты совпадают с ожиданием")
+            else:
+                print("\n2. ⚠ INFERENCE_API_OPENAIVLM_MODEL не установлен, пропускаем тест")
+
+            # Тест 3: AvailableTools для INFERENCE_API_DEEPSEEK_MODEL
+            if INFERENCE_API_DEEPSEEK_MODEL:
+                print(f"\n3. Получение инструментов для модели {INFERENCE_API_DEEPSEEK_MODEL}")
+                response_ds = stub.AvailableTools(
+                    llm_pb2.AvailableToolsRequest(model=INFERENCE_API_DEEPSEEK_MODEL),
+                    metadata=get_metadata()
+                )
+                print(f"✓ Успешно получены инструменты для DeepSeek модели")
+                print(f"  Количество: {len(response_ds.strings)}")
+                print(f"  Полученные инструменты: {response_ds.strings}")
+                print(f"  Ожидаемые инструменты: {INFERENCE_API_DEEPSEEK_TOOLS}")
+
+                if INFERENCE_API_DEEPSEEK_TOOLS:
+                    # Проверяем, что полученные инструменты совпадают с ожидаемыми
+                    self.assertEqual(sorted(response_ds.strings), sorted(INFERENCE_API_DEEPSEEK_TOOLS),
+                                   f"Инструменты для {INFERENCE_API_DEEPSEEK_MODEL} не совпадают с ожиданием")
+                    print("  ✓ Инструменты совпадают с ожиданием")
+            else:
+                print("\n3. ⚠ INFERENCE_API_DEEPSEEK_MODEL не установлен, пропускаем тест")
 
         except Exception as e:
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"AvailableTools failed: {e}")
 
+    comment = '''
     def test_10_new_message_text_with_websearch(self):
         """Тест 10: NewMessage с текстовым сообщением и function=websearch -
            требует авторизацию."""
