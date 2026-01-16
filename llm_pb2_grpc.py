@@ -68,7 +68,7 @@ class LlmStub(object):
                 _registered_method=True)
         self.AvailableTools = channel.unary_unary(
                 '/llm.Llm/AvailableTools',
-                request_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+                request_serializer=llm__pb2.AvailableToolsRequest.SerializeToString,
                 response_deserializer=llm__pb2.StringsListResponse.FromString,
                 _registered_method=True)
 
@@ -168,7 +168,7 @@ def add_LlmServicer_to_server(servicer, server):
             ),
             'AvailableTools': grpc.unary_unary_rpc_method_handler(
                     servicer.AvailableTools,
-                    request_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                    request_deserializer=llm__pb2.AvailableToolsRequest.FromString,
                     response_serializer=llm__pb2.StringsListResponse.SerializeToString,
             ),
     }
@@ -338,7 +338,7 @@ class Llm(object):
             request,
             target,
             '/llm.Llm/AvailableTools',
-            google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            llm__pb2.AvailableToolsRequest.SerializeToString,
             llm__pb2.StringsListResponse.FromString,
             options,
             channel_credentials,
