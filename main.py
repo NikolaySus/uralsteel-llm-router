@@ -40,7 +40,7 @@ for key, value in os.environ.items():
         os.environ[key] = os.path.expandvars(value)
 
 # Переменные окружения вида CONST_api_case
-# Пока CONST + YANDEXAI_/OPENAI_ + BASE_URL/FOLDER/KEY/MODEL/PRICES_URL
+# Пока CONST + YANDEXAI_/OPENAI_ + BASE_URL/FOLDER/KEY/MODEL/PRICES_URL/TOOLS
 CONST = "INFERENCE_API_"
 CONST_LEN = len(CONST)
 ALL_API_VARS = dict()
@@ -55,6 +55,8 @@ for name, value in os.environ.items():
         ALL_API_VARS[api][case] = value
         if case == "model":
             MODEL_TO_API[value] = api
+        elif case == "tools":
+            ALL_API_VARS[api][case] = json.loads(value)
 # Секретный ключ для клиентского доступа к gRPC методам
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
 # Формат даты и времени
