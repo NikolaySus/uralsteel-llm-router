@@ -172,15 +172,6 @@ RESTRICTIONS = (
   including religion, religious beliefs or figures, gender identity,
   sexual orientation, sexuality, or any content likely to cause ideological,
   moral, or identity-based conflict.
-- Political or military content is NOT globally forbidden.
-  However, you MUST NOT discuss political, military, or geopolitical topics
-  related to the Russian Federation, the Soviet Union (USSR),
-  or the Russian Empire.
-- For all other regions or historical periods:
-  - You MAY provide neutral, factual, non-advocacy information.
-  - You MUST NOT express opinions, persuasion, propaganda,
-    or normative judgments.
-  - Military content, if allowed, must be high-level and non-operational.
 - Geographic, scientific, environmental, cultural, and non-violent
   historical topics are allowed, even if they indirectly intersect with
   politics or treaties.
@@ -355,7 +346,7 @@ def call_function(log_uid, name, args):
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
 
-def generate_chat_name(user_message: str):
+def generate_chat_name(log_uid: str, user_message: str):
     """Генерирует название чата на основе сообщения пользователя.
     
     Использует llm для создания короткого названия (до 1024 токенов).
@@ -399,6 +390,8 @@ def generate_chat_name(user_message: str):
     completion_tokens = getattr(response.usage, "completion_tokens", 0)
     total_tokens = getattr(response.usage, "total_tokens", 0)
     usd = ALL_API_VARS["openaimini"]["price_coef"] * total_tokens
+    logger.info("(%s) generate_chat_name cost = %s\n\tprompt_tokens = %s\n\tcompletion_tokens = %s\n\ttotal_tokens = %s",
+                log_uid, usd, prompt_tokens, completion_tokens, total_tokens)
     return llm_pb2.ChatNameResponseType(name=name_c,
                                         prompt_tokens=prompt_tokens,
                                         completion_tokens=completion_tokens,
@@ -791,7 +784,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             # Если это новый чат (история пуста), генерируем название
             if not history:
                 try:
-                    chat_name_r = generate_chat_name(user_message)
+                    chat_name_r = generate_chat_name(log_uid, user_message)
                     if chat_name_r is not None:
                         yield llm_pb2.NewMessageResponse(chat_name=chat_name_r)
                 except Exception as e:
