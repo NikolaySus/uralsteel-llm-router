@@ -314,6 +314,7 @@ def image_gen(query: str):
         response = client.images.generate(
             model=ALL_API_VARS["openaiimgen"]["model"],
             prompt=query,
+            quality="medium",
             size="1024x1024"
         )
 
@@ -942,7 +943,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             )
                         )
                         logger.debug("(%s) tool output: %s\n%s",
-                                     log_uid, result[:420], meta)
+                                     log_uid, result[:420], str(meta)[:420])
                         if meta is not None:
                             yield llm_pb2.NewMessageResponse(
                                 tool_metadata=meta

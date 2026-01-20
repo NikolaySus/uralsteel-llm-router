@@ -249,7 +249,7 @@ async def convert_to_md_async(url: str, docling_address: str):
         docling_url = f"http://{docling_address}/v1/convert/source"
         payload = {
             "options": {
-                "from_formats": ["docx", "pptx", "html", "image", "pdf",
+                "from_formats": ["doc", "docx", "pptx", "html", "image", "pdf",
                                 "asciidoc", "md", "xlsx"],
                 "to_formats": ["md"],
                 "image_export_mode": "embedded",
