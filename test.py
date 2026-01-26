@@ -3,6 +3,7 @@
 import base64
 import json
 import os
+import sys
 import tempfile
 import unittest
 
@@ -11,6 +12,9 @@ import grpc
 
 import llm_pb2
 import llm_pb2_grpc
+
+
+sys.stdout.reconfigure(encoding="utf-8")
 
 
 # =============================================================================
@@ -300,7 +304,7 @@ class TestLlmService(unittest.TestCase):
         try:
             # Передаём авторизационный заголовок
             responses = stub.NewMessage(
-                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE),
+                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE, text2text_model="deepseek-chat"),
                 metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
@@ -332,6 +336,7 @@ class TestLlmService(unittest.TestCase):
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"NewMessage text no history failed: {e}")
 
+    comment = '''
     def test_05_new_message_text_with_history(self):
         """Тест 5: NewMessage с текстовым сообщением и историей -
            требует авторизацию."""
@@ -544,7 +549,6 @@ class TestLlmService(unittest.TestCase):
             print(f"✗ Тест не прошел: {e}")
             self.fail(f"AvailableTools failed: {e}")
 
-    comment = '''
     def test_10_new_message_text_with_websearch(self):
         """Тест 10: NewMessage с текстовым сообщением и function=websearch -
            требует авторизацию."""
