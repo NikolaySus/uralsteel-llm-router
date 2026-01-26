@@ -601,8 +601,7 @@ def responses_from_llm_chunk(log_uid, chunk, summ, sumr):
             log_uid, completion_tokens or '-', prompt_tokens or '-', total_tokens or '-')
 
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
-    if (finish_reason == "stop" and delta_content is None) or (
-        total_tokens is not None and (
+    if (total_tokens is not None and (
             prompt_tokens is not None and completion_tokens is not None)):
         return llm_pb2.NewMessageResponse(
             complete=llm_pb2.CompleteResponseType(
