@@ -559,9 +559,12 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
     return None, None, None, None, None
 
 
-def responses_from_llm_chunk(price_coef, log_uid, chunk, summ, sumr):
+def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):
     """Преобразует один элемент потока ответа LLM в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
+    
+    price_info может быть либо float (для простых цен), либо dict с ключами
+    'input' и 'output' для разных цен входных и выходных токенов.
     """
     # delta content/reasoning_content, если есть
     delta_content = None
@@ -595,13 +598,23 @@ def responses_from_llm_chunk(price_coef, log_uid, chunk, summ, sumr):
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
     if (total_tokens is not None and (
             prompt_tokens is not None and completion_tokens is not None)):
+        # Рассчитываем стоимость в зависимости от структуры price_info
+        if isinstance(price_info, dict):
+            # Разные цены для входных и выходных токенов
+            input_coef = price_info.get("input", 0)
+            output_coef = price_info.get("output", 0)
+            expected_cost = (input_coef * (prompt_tokens or prompt_tokens_fix) +
+                           output_coef * (completion_tokens or completion_tokens_fix))
+        else:
+            # Единая цена (для обратной совместимости)
+            expected_cost = price_info * (total_tokens or total_tokens_fix)
+        
         return llm_pb2.NewMessageResponse(
             complete=llm_pb2.CompleteResponseType(
                 prompt_tokens=(prompt_tokens or prompt_tokens_fix),
                 completion_tokens=(completion_tokens or completion_tokens_fix),
                 total_tokens=(total_tokens or total_tokens_fix),
-                expected_cost_usd=price_coef *
-                                  (total_tokens or total_tokens_fix),
+                expected_cost_usd=expected_cost,
                 datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
             )
         ), None
@@ -619,12 +632,14 @@ def responses_from_llm_chunk(price_coef, log_uid, chunk, summ, sumr):
         return None, None
 
 
-def proc_llm_stream_responses(price_coef, log_uid, messages, tool_choice,
+
+def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
                               api_to_use, key_to_use, dir_to_use,
                               model_to_use, summ, sumr):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
+        price_info: Информация о цене (может быть float или dict с ключами 'input'/'output')
         messages: Сообщения для отправки в LLM
         tool_choice: Параметр tool_choice для LLM (например, "auto")
     
@@ -670,7 +685,7 @@ def proc_llm_stream_responses(price_coef, log_uid, messages, tool_choice,
             delta_content = None
             if resp is None:
                 resp, delta_content = responses_from_llm_chunk(
-                    price_coef, log_uid, chunk, summ, sumr)
+                    price_info, log_uid, chunk, summ, sumr)
             if resp is not None:
                 yield (resp, item, delta_content)
     finally:
@@ -876,7 +891,17 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             api_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["base_url"]
             key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
             dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
-            price_coef = ALL_API_VARS[MODEL_TO_API[model_to_use]]["price_coef"]
+            # Получаем информацию о цене (может быть float или dict с 'input'/'output')
+            api_name = MODEL_TO_API[model_to_use]
+            if "price_coef_input" in ALL_API_VARS[api_name]:
+                # Модель с разделением на входные и выходные токены
+                price_info = {
+                    "input": ALL_API_VARS[api_name]["price_coef_input"],
+                    "output": ALL_API_VARS[api_name]["price_coef_output"]
+                }
+            else:
+                # Модель с единой ценой
+                price_info = ALL_API_VARS[api_name]["price_coef"]
 
             # Определяем инструмент функции
             if function_tool is None or not function_tool:
@@ -900,7 +925,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         summ += len(message.get("content", ""))
                     sumr = 0
                     for r, i, d in proc_llm_stream_responses(
-                        price_coef, log_uid, messages, function_tool, api_to_use,
+                        price_info, log_uid, messages, function_tool, api_to_use,
                         key_to_use, dir_to_use, model_to_use, summ, sumr
                     ):
                         if d is not None:
@@ -939,7 +964,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             summ += len(message.get("content", ""))
                         sumr = 0
                         for r, i, d in proc_llm_stream_responses(
-                            price_coef, log_uid, messages, "none", api_to_use, key_to_use,
+                            price_info, log_uid, messages, "none", api_to_use, key_to_use,
                             dir_to_use, model_to_use, summ, sumr
                         ):
                             if d is not None:
@@ -1098,8 +1123,16 @@ if __name__ == "__main__":
         if 'generated_at' not in config or not config['generated_at']:
             raise ValueError("Invalid config: missing 'generated_at'")
         for name, coef in config.get("prices_coefs", {}).items():
-            ALL_API_VARS[name]["price_coef"] = coef
-            logger.info("Price coefficient for %s: %s", name, coef)
+            if isinstance(coef, dict):
+                # Модели с разделением на входные и выходные токены
+                ALL_API_VARS[name]["price_coef_input"] = coef.get("input", 0)
+                ALL_API_VARS[name]["price_coef_output"] = coef.get("output", 0)
+                logger.info("Price coefficient for %s: input=%.10f, output=%.10f",
+                           name, coef.get("input", 0), coef.get("output", 0))
+            else:
+                # Модели с единой ценой
+                ALL_API_VARS[name]["price_coef"] = coef
+                logger.info("Price coefficient for %s: %s", name, coef)
     except Exception as e:
         logger.error("Invalid config: %s", e)
         exit(1)
