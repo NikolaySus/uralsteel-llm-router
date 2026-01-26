@@ -304,7 +304,7 @@ class TestLlmService(unittest.TestCase):
         try:
             # Передаём авторизационный заголовок
             responses = stub.NewMessage(
-                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE, text2text_model="deepseek-chat"),
+                llm_pb2.NewMessageRequest(msg=TEST_MESSAGE),
                 metadata=get_metadata())
 
             _, has_gen, has_complete, __, content, reasoning, fc, user_uid, llm_uid = \
