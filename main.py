@@ -559,7 +559,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
     return None, None, None, None, None
 
 
-def responses_from_llm_chunk(log_uid, chunk, summ, sumr):
+def responses_from_llm_chunk(price_coef, log_uid, chunk, summ, sumr):
     """Преобразует один элемент потока ответа LLM в один
     экземпляр llm_pb2.NewMessageResponse или возвращает None.
     """
@@ -600,7 +600,7 @@ def responses_from_llm_chunk(log_uid, chunk, summ, sumr):
                 prompt_tokens=(prompt_tokens or prompt_tokens_fix),
                 completion_tokens=(completion_tokens or completion_tokens_fix),
                 total_tokens=(total_tokens or total_tokens_fix),
-                expected_cost_usd=ALL_API_VARS["yandexai"]["price_coef"] *
+                expected_cost_usd=price_coef *
                                   (total_tokens or total_tokens_fix),
                 datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
             )
@@ -619,7 +619,7 @@ def responses_from_llm_chunk(log_uid, chunk, summ, sumr):
         return None, None
 
 
-def proc_llm_stream_responses(log_uid, messages, tool_choice,
+def proc_llm_stream_responses(price_coef, log_uid, messages, tool_choice,
                               api_to_use, key_to_use, dir_to_use,
                               model_to_use, summ, sumr):
     """Генератор для обработки потока ответов от LLM.
@@ -670,7 +670,7 @@ def proc_llm_stream_responses(log_uid, messages, tool_choice,
             delta_content = None
             if resp is None:
                 resp, delta_content = responses_from_llm_chunk(
-                    log_uid, chunk, summ, sumr)
+                    price_coef, log_uid, chunk, summ, sumr)
             if resp is not None:
                 yield (resp, item, delta_content)
     finally:
@@ -876,6 +876,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             api_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["base_url"]
             key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
             dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
+            price_coef = ALL_API_VARS[MODEL_TO_API[model_to_use]]["price_coef"]
 
             # Определяем инструмент функции
             if function_tool is None or not function_tool:
@@ -899,7 +900,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         summ += len(message.get("content", ""))
                     sumr = 0
                     for r, i, d in proc_llm_stream_responses(
-                        log_uid, messages, function_tool, api_to_use,
+                        price_coef, log_uid, messages, function_tool, api_to_use,
                         key_to_use, dir_to_use, model_to_use, summ, sumr
                     ):
                         if d is not None:
@@ -938,7 +939,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             summ += len(message.get("content", ""))
                         sumr = 0
                         for r, i, d in proc_llm_stream_responses(
-                            log_uid, messages, "none", api_to_use, key_to_use,
+                            price_coef, log_uid, messages, "none", api_to_use, key_to_use,
                             dir_to_use, model_to_use, summ, sumr
                         ):
                             if d is not None:
