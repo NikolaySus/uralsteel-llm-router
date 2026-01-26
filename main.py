@@ -398,7 +398,17 @@ def generate_chat_name(log_uid: str, user_message: str):
     prompt_tokens = getattr(response.usage, "prompt_tokens", 0)
     completion_tokens = getattr(response.usage, "completion_tokens", 0)
     total_tokens = getattr(response.usage, "total_tokens", 0)
-    usd = ALL_API_VARS["openaimini"]["price_coef"] * total_tokens
+
+    # Рассчитываем стоимость с поддержкой разделения на входные и выходные токены
+    if "price_coef_input" in ALL_API_VARS["openaimini"]:
+        # Модель с разделением на входные и выходные токены
+        input_coef = ALL_API_VARS["openaimini"]["price_coef_input"]
+        output_coef = ALL_API_VARS["openaimini"]["price_coef_output"]
+        usd = input_coef * prompt_tokens + output_coef * completion_tokens
+    else:
+        # Модель с единой ценой
+        usd = ALL_API_VARS["openaimini"]["price_coef"] * total_tokens
+
     logger.info("(%s) generate_chat_name cost = %s\n\tprompt_tokens = %s\n\tcompletion_tokens = %s\n\ttotal_tokens = %s",
                 log_uid, usd, prompt_tokens, completion_tokens, total_tokens)
     return llm_pb2.ChatNameResponseType(name=name_c,
