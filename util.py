@@ -234,6 +234,14 @@ def detect_file_format(file_data: bytes) -> str:
         else:
             # Неизвестный ZIP, вернем пустую строку
             return ''
+    elif file_data.startswith(b'\xd0\xcf\x11\xe0'):
+        # OLE2 формат - может быть DOC, XLS и т.д.
+        # Проверяем является ли это Word документом
+        if b'Word.Document' in file_data[:8192] or b'Microsoft Word' in file_data[:8192]:
+            return 'doc'
+        else:
+            # Неизвестный OLE2 формат
+            return ''
     elif file_data.startswith(b'<!DOCTYPE') or file_data.startswith(b'<html'):
         return 'html'
     
@@ -248,6 +256,39 @@ def detect_file_format(file_data: bytes) -> str:
         return 'md'
     
     return ''
+
+
+def docx_to_markdown_via_markitdown(docx_data: bytes) -> str:
+    """Конвертирует DOCX документ в markdown с помощью markitdown.
+    
+    Args:
+        docx_data: Бинарные данные DOCX файла
+    
+    Returns:
+        Markdown контент документа
+    """
+    import tempfile
+    import os
+    from markitdown import MarkItDown
+    
+    try:
+        # Создаём временный файл для DOCX
+        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
+            tmp_file.write(docx_data)
+            tmp_path = tmp_file.name
+        
+        try:
+            # Используем markitdown для конвертации
+            md = MarkItDown()
+            result = md.convert(tmp_path)
+            return result.text_content
+        finally:
+            # Удаляем временный файл
+            if os.path.exists(tmp_path):
+                os.unlink(tmp_path)
+    except Exception as e:
+        logger.error("Failed to convert DOCX to markdown using markitdown: %s", e)
+        raise
 
 
 async def convert_to_md_async(url: str, docling_address: str):
@@ -272,7 +313,7 @@ async def convert_to_md_async(url: str, docling_address: str):
 
     # Список поддерживаемых форматов
     from_formats = ["docx", "pptx", "html", "image",
-                    "pdf", "asciidoc", "md", "xlsx"]
+                    "pdf", "asciidoc", "md", "xlsx", "doc"]
 
     filename = ""
     file_extension = ""
@@ -346,14 +387,39 @@ async def convert_to_md_async(url: str, docling_address: str):
         return filename, md_content
     except Exception as e:
         logger.error("Converting document to md failed: %s", e)
-        logger.info("Falling back to dumb markdown...")
+        logger.info("Falling back to dumb markdown... Format: %s", file_extension)
+        
         try:
-            return filename, "\n".join(
-                [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
-                 for i, u
-                 in enumerate(remote_pdf_to_b64_images(url))])
+            if file_extension == 'pdf':
+                # Для PDF используем конвертацию в изображения
+                return filename, "\n".join(
+                    [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
+                     for i, u
+                     in enumerate(remote_pdf_to_b64_images(url))])
+            
+            elif file_extension in ('docx', 'doc'):
+                # Для DOCX и DOC используем markitdown
+                # Если у нас уже есть данные файла в переменной file_data (из текущего блока try)
+                # То используем их, иначе скачиваем заново
+                try:
+                    md_content = docx_to_markdown_via_markitdown(file_data)
+                except NameError:
+                    # file_data не определён, скачиваем файл заново
+                    async_client = httpx.AsyncClient(timeout=60.0)
+                    get_response = await async_client.get(url)
+                    file_data = get_response.content
+                    md_content = docx_to_markdown_via_markitdown(file_data)
+                return filename, md_content
+            
+            else:
+                # Для других форматов выбрасываем исключение
+                error_msg = f"Fallback conversion not supported for format: {file_extension}"
+                logger.error(error_msg)
+                raise ValueError(error_msg)
+        
         except Exception as e2:
             logger.error("Converting document to dumb markdown failed: %s", e2)
+            return None, None
 
 
 async def check_docling_health(docling_address: str):
