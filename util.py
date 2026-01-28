@@ -339,10 +339,10 @@ async def convert_to_md_async(url: str, docling_address: str):
         if md_content:
             md_size = len(md_content.encode('utf-8'))
             logger.info("md_size=%s", md_size)
-            if original_size > 2 * md_size:
+            if original_size > 3.2 * md_size:
                 raise AssertionError(
                     f"Original file size ({original_size} bytes) is more than "
-                    f"2 times greater than markdown size ({md_size} bytes).")
+                    f"3.2 times greater than markdown size ({md_size} bytes).")
         return filename, md_content
     except Exception as e:
         logger.error("Converting document to md failed: %s", e)
