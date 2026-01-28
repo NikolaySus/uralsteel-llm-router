@@ -211,6 +211,45 @@ def websearch(query: str, tavily_base_url: str):
     return results
 
 
+def detect_file_format(file_data: bytes) -> str:
+    """Определяет формат файла по его содержимому (магические числа).
+    
+    Args:
+        file_data: Бинарные данные файла
+    
+    Returns:
+        Строка с расширением файла или пустая строка если не определено
+    """
+    # Проверяем магические числа файлов
+    if file_data.startswith(b'%PDF'):
+        return 'pdf'
+    elif file_data.startswith(b'PK\x03\x04'):
+        # ZIP архив - может быть docx, pptx, xlsx
+        if b'word/' in file_data[:8192]:
+            return 'docx'
+        elif b'ppt/' in file_data[:8192]:
+            return 'pptx'
+        elif b'xl/' in file_data[:8192]:
+            return 'xlsx'
+        else:
+            # Неизвестный ZIP, вернем пустую строку
+            return ''
+    elif file_data.startswith(b'<!DOCTYPE') or file_data.startswith(b'<html'):
+        return 'html'
+    
+    # Проверяем изображения через imghdr
+    img_type = imghdr.what(None, file_data)
+    if img_type:
+        return 'image'
+    
+    # Проверяем другие форматы
+    if file_data.startswith(b'# ') or file_data.startswith(b'---'):
+        # Возможно Markdown или YAML
+        return 'md'
+    
+    return ''
+
+
 async def convert_to_md_async(url: str, docling_address: str):
     """Асинхронно конвертирует документ в markdown через docling API.
     
@@ -223,34 +262,64 @@ async def convert_to_md_async(url: str, docling_address: str):
     Returns:
         Кортеж (filename, md_content) с именем файла и markdown контентом
         или (None, None) в случае ошибки.
+    
+    Raises:
+        ValueError: Если формат файла не поддерживается.
     """
     if not docling_address:
         logger.error("DOCLING_ADDRESS is not set")
         return None, None
 
+    # Список поддерживаемых форматов
+    from_formats = ["docx", "pptx", "html", "image",
+                    "pdf", "asciidoc", "md", "xlsx"]
+
     filename = ""
+    file_extension = ""
 
     try:
-        # Сначала качаем файл, чтобы узнать его размер в байтах
+        # Сначала пытаемся получить расширение из URL
+        parsed_url = urllib.parse.urlparse(url)
+        url_path = parsed_url.path
+        if "." in url_path:
+            _, url_extension = urllib.parse.unquote(url_path).rsplit(".", 1)
+            file_extension = url_extension.lower()
+
+        logger.info("File extension from URL: %s",
+                    file_extension if file_extension else "not found")
+
+        # Скачиваем файл, чтобы узнать его размер и определить тип
         async_client = httpx.AsyncClient(timeout=60.0)
 
-        # Чтобы узнать размер файла, сначала траим HEAD-запрос (эффективнее)
-        original_size = 0
         try:
-            head_response = await async_client.head(url)
-            original_size = int(head_response.headers['content-length'])
-        except:
-            # Если HEAD не удался, то GET-запрос, но читаем только заголовки
             get_response = await async_client.get(url)
-            original_size = len(get_response.content)
-        logger.debug("original_size=%s", original_size)
+            file_data = get_response.content
+            original_size = len(file_data)
+        except Exception as e:
+            logger.error("Failed to download file: %s", e)
+            raise
+
+        logger.info("original_size=%s", original_size)
+
+        # Если расширение не найдено в URL, определяем по содержимому файла
+        if not file_extension:
+            detected_extension = detect_file_format(file_data)
+            if detected_extension:
+                file_extension = detected_extension
+                logger.info("Detected file extension from content: %s",
+                             file_extension)
+
+        # Проверяем, поддерживается ли формат
+        if not file_extension or file_extension not in from_formats:
+            error_msg = f"Unsupported file format: '{file_extension}'. Supported formats: {', '.join(from_formats)}"
+            logger.error(error_msg)
+            raise ValueError(error_msg)
 
         # Теперь кидаем запрос в API Docling.
         docling_url = f"http://{docling_address}/v1/convert/source"
         payload = {
             "options": {
-                "from_formats": ["doc", "docx", "pptx", "html", "image", "pdf",
-                                "asciidoc", "md", "xlsx"],
+                "from_formats": from_formats,
                 "to_formats": ["md"],
                 "image_export_mode": "embedded",
                 "do_ocr": False,
@@ -269,11 +338,11 @@ async def convert_to_md_async(url: str, docling_address: str):
         # Считаем размер md_content в байтах
         if md_content:
             md_size = len(md_content.encode('utf-8'))
-            logger.debug("md_size=%s", md_size)
-            if original_size > 3 * md_size:
+            logger.info("md_size=%s", md_size)
+            if original_size > 2 * md_size:
                 raise AssertionError(
                     f"Original file size ({original_size} bytes) is more than "
-                    f"3 times greater than markdown size ({md_size} bytes).")
+                    f"2 times greater than markdown size ({md_size} bytes).")
         return filename, md_content
     except Exception as e:
         logger.error("Converting document to md failed: %s", e)
