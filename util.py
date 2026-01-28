@@ -306,7 +306,7 @@ def docx_to_markdown_via_markitdown(file_data: bytes, file_extension: str = 'doc
 def convert_doc_to_docx(doc_data: bytes) -> bytes:
     """Конвертирует DOC файл в DOCX используя доступные инструменты.
     
-    Пробует в порядке: LibreOffice, python-docx, pandoc.
+    Пробует в порядке: unoconv, LibreOffice, python-docx.
     
     Args:
         doc_data: Бинарные данные DOC файла
@@ -316,14 +316,21 @@ def convert_doc_to_docx(doc_data: bytes) -> bytes:
     """
     errors = []
     
-    # Попытка 1: LibreOffice
+    # Попытка 1: unoconv (самый легкий для сервера)
+    try:
+        return _convert_doc_to_docx_unoconv(doc_data)
+    except Exception as e:
+        logger.warning("unoconv conversion failed: %s", e)
+        errors.append(f"unoconv: {e}")
+    
+    # Попытка 2: LibreOffice
     try:
         return _convert_doc_to_docx_libreoffice(doc_data)
     except Exception as e:
         logger.warning("LibreOffice conversion failed: %s", e)
         errors.append(f"LibreOffice: {e}")
     
-    # Попытка 2: python-docx
+    # Попытка 3: python-docx (если файл на самом деле DOCX с расширением .doc)
     if HAS_PYTHON_DOCX:
         try:
             return _convert_doc_to_docx_python_docx(doc_data)
@@ -331,17 +338,75 @@ def convert_doc_to_docx(doc_data: bytes) -> bytes:
             logger.warning("python-docx conversion failed: %s", e)
             errors.append(f"python-docx: {e}")
     
-    # Попытка 3: pandoc (конвертирует DOC напрямую в DOCX)
-    try:
-        return _convert_doc_to_docx_pandoc(doc_data)
-    except Exception as e:
-        logger.warning("pandoc conversion failed: %s", e)
-        errors.append(f"pandoc: {e}")
-    
-    # Все методы失败
-    error_msg = "All DOC to DOCX conversion methods failed:\n" + "\n".join(errors)
+    # Все методы failed
+    error_msg = (
+        "Could not convert DOC to DOCX. "
+        "Please convert your DOC file to DOCX format using Microsoft Word or LibreOffice, "
+        "then upload the DOCX file. "
+        f"Errors: {'; '.join(errors)}"
+    )
     logger.error(error_msg)
     raise RuntimeError(error_msg)
+
+
+def _convert_doc_to_docx_unoconv(doc_data: bytes) -> bytes:
+    """Конвертирует DOC в DOCX используя unoconv (универсальный конвертор для LibreOffice).
+    
+    Args:
+        doc_data: Бинарные данные DOC файла
+    
+    Returns:
+        Бинарные данные DOCX файла
+    """
+    try:
+        # Создаём уникальную временную директорию для конвертации
+        tmp_work_dir = tempfile.mkdtemp(prefix='doc2docx_')
+        logger.debug("Created work directory for unoconv: %s", tmp_work_dir)
+        
+        try:
+            # Создаём входной файл
+            tmp_input_path = os.path.join(tmp_work_dir, 'input.doc')
+            with open(tmp_input_path, 'wb') as f:
+                f.write(doc_data)
+            logger.debug("Wrote input file: %s (%d bytes)", tmp_input_path, len(doc_data))
+            
+            # Выходной файл
+            tmp_output_path = os.path.join(tmp_work_dir, 'input.docx')
+            
+            # Запускаем unoconv: doc -> docx
+            cmd = ['unoconv', '-f', 'docx', '-o', tmp_output_path, tmp_input_path]
+            
+            logger.info("Converting DOC to DOCX using unoconv...")
+            logger.debug("Command: %s", ' '.join(cmd))
+            result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
+            
+            logger.debug("unoconv return code: %d", result.returncode)
+            if result.stdout:
+                logger.debug("unoconv stdout: %s", result.stdout)
+            if result.stderr:
+                logger.debug("unoconv stderr: %s", result.stderr)
+            
+            if result.returncode != 0:
+                raise RuntimeError(f"unoconv conversion failed with code {result.returncode}: {result.stderr}")
+            
+            if not os.path.exists(tmp_output_path):
+                raise FileNotFoundError(f"unoconv did not create output file: {tmp_output_path}")
+            
+            # Читаем результат
+            with open(tmp_output_path, 'rb') as f:
+                docx_data = f.read()
+            
+            logger.debug("Successfully converted DOC to DOCX using unoconv (%d bytes)", len(docx_data))
+            return docx_data
+        finally:
+            # Удаляем временную директорию
+            import shutil
+            if os.path.exists(tmp_work_dir):
+                shutil.rmtree(tmp_work_dir, ignore_errors=True)
+                logger.debug("Cleaned up work directory: %s", tmp_work_dir)
+    except Exception as e:
+        logger.error("Failed to convert DOC to DOCX using unoconv: %s", e)
+        raise
 
 
 def _convert_doc_to_docx_libreoffice(doc_data: bytes) -> bytes:
@@ -463,66 +528,6 @@ def _convert_doc_to_docx_python_docx(doc_data: bytes) -> bytes:
             raise RuntimeError(f"python-docx failed to process file: {e}")
     except Exception as e:
         logger.error("Failed to convert DOC to DOCX using python-docx: %s", e)
-        raise
-
-
-def _convert_doc_to_docx_pandoc(doc_data: bytes) -> bytes:
-    """Конвертирует DOC в DOCX используя pandoc.
-    
-    Args:
-        doc_data: Бинарные данные DOC файла
-    
-    Returns:
-        Бинарные данные DOCX файла
-    """
-    try:
-        # Создаём уникальную временную директорию для конвертации
-        tmp_work_dir = tempfile.mkdtemp(prefix='doc2docx_')
-        logger.debug("Created work directory for pandoc: %s", tmp_work_dir)
-        
-        try:
-            # Создаём входной файл
-            tmp_input_path = os.path.join(tmp_work_dir, 'input.doc')
-            with open(tmp_input_path, 'wb') as f:
-                f.write(doc_data)
-            logger.debug("Wrote input file: %s (%d bytes)", tmp_input_path, len(doc_data))
-            
-            # Выходной файл
-            tmp_output_path = os.path.join(tmp_work_dir, 'output.docx')
-            
-            # Запускаем pandoc: doc -> docx
-            cmd = ['pandoc', '-f', 'doc', '-t', 'docx', '-o', tmp_output_path, tmp_input_path]
-            
-            logger.info("Converting DOC to DOCX using pandoc...")
-            logger.debug("Command: %s", ' '.join(cmd))
-            result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
-            
-            logger.debug("pandoc return code: %d", result.returncode)
-            if result.stdout:
-                logger.debug("pandoc stdout: %s", result.stdout)
-            if result.stderr:
-                logger.debug("pandoc stderr: %s", result.stderr)
-            
-            if result.returncode != 0:
-                raise RuntimeError(f"pandoc conversion failed with code {result.returncode}: {result.stderr}")
-            
-            if not os.path.exists(tmp_output_path):
-                raise FileNotFoundError(f"pandoc did not create output file: {tmp_output_path}")
-            
-            # Читаем результат
-            with open(tmp_output_path, 'rb') as f:
-                docx_data = f.read()
-            
-            logger.debug("Successfully converted DOC to DOCX using pandoc (%d bytes)", len(docx_data))
-            return docx_data
-        finally:
-            # Удаляем временную директорию
-            import shutil
-            if os.path.exists(tmp_work_dir):
-                shutil.rmtree(tmp_work_dir, ignore_errors=True)
-                logger.debug("Cleaned up work directory: %s", tmp_work_dir)
-    except Exception as e:
-        logger.error("Failed to convert DOC to DOCX using pandoc: %s", e)
         raise
 
 
