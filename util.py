@@ -307,46 +307,56 @@ def convert_doc_to_docx(doc_data: bytes) -> bytes:
         Бинарные данные DOCX файла
     """
     try:
-        # Создаём временные файлы для входа и выхода
-        with tempfile.NamedTemporaryFile(suffix='.doc', delete=False) as tmp_input:
-            tmp_input.write(doc_data)
-            tmp_input_path = tmp_input.name
-        
-        # Генерируем путь для выходного файла
-        tmp_output_dir = tempfile.gettempdir()
-        tmp_output_name = os.path.splitext(os.path.basename(tmp_input_path))[0] + '.docx'
-        tmp_output_path = os.path.join(tmp_output_dir, tmp_output_name)
+        # Создаём уникальную временную директорию для этой конвертации
+        tmp_work_dir = tempfile.mkdtemp(prefix='doc2docx_')
         
         try:
+            # Создаём входной файл с фиксированным именем в работочной директории
+            tmp_input_path = os.path.join(tmp_work_dir, 'input.doc')
+            with open(tmp_input_path, 'wb') as tmp_input:
+                tmp_input.write(doc_data)
+            
+            # Ожидаемый путь выходного файла
+            tmp_output_path = os.path.join(tmp_work_dir, 'input.docx')
+            
             # Используем LibreOffice для конвертации
             cmd = [
                 'libreoffice',
                 '--headless',
                 '--convert-to', 'docx',
-                '--outdir', tmp_output_dir,
+                '--outdir', tmp_work_dir,
                 tmp_input_path
             ]
             
             logger.info("Converting DOC to DOCX using LibreOffice...")
-            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
             
             if result.returncode != 0:
-                raise RuntimeError(f"LibreOffice conversion failed: {result.stderr.decode()}")
+                logger.error("LibreOffice stderr: %s", result.stderr)
+                raise RuntimeError(f"LibreOffice conversion failed: {result.stderr}")
+            
+            logger.debug("LibreOffice stdout: %s", result.stdout)
+            
+            # Проверяем, создан ли выходной файл
+            if not os.path.exists(tmp_output_path):
+                # Если нет, ищем любой DOCX файл в директории
+                docx_files = [f for f in os.listdir(tmp_work_dir) if f.endswith('.docx')]
+                if not docx_files:
+                    raise FileNotFoundError(
+                        f"No DOCX file created by LibreOffice in {tmp_work_dir}")
+                tmp_output_path = os.path.join(tmp_work_dir, docx_files[0])
+                logger.debug("Found converted file: %s", tmp_output_path)
             
             # Читаем конвертированный файл
-            if not os.path.exists(tmp_output_path):
-                raise FileNotFoundError(f"Output file not created: {tmp_output_path}")
-            
             with open(tmp_output_path, 'rb') as f:
                 docx_data = f.read()
             
             return docx_data
         finally:
-            # Удаляем временные файлы
-            if os.path.exists(tmp_input_path):
-                os.unlink(tmp_input_path)
-            if os.path.exists(tmp_output_path):
-                os.unlink(tmp_output_path)
+            # Удаляем всю работочную директорию и её содержимое
+            import shutil
+            if os.path.exists(tmp_work_dir):
+                shutil.rmtree(tmp_work_dir, ignore_errors=True)
     except Exception as e:
         logger.error("Failed to convert DOC to DOCX: %s", e)
         raise
