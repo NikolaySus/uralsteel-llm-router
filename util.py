@@ -10,6 +10,7 @@ import asyncio
 import json
 import os
 import tempfile
+import subprocess
 
 from markitdown import MarkItDown
 import requests
@@ -272,6 +273,11 @@ def docx_to_markdown_via_markitdown(file_data: bytes, file_extension: str = 'doc
         Markdown контент документа
     """
     try:
+        # Если это DOC файл, сначала конвертируем в DOCX
+        if file_extension == 'doc':
+            file_data = convert_doc_to_docx(file_data)
+            file_extension = 'docx'
+        
         # Создаём временный файл с правильным расширением
         with tempfile.NamedTemporaryFile(suffix=f'.{file_extension}', delete=False) as tmp_file:
             tmp_file.write(file_data)
@@ -288,6 +294,61 @@ def docx_to_markdown_via_markitdown(file_data: bytes, file_extension: str = 'doc
                 os.unlink(tmp_path)
     except Exception as e:
         logger.error("Failed to convert document to markdown using markitdown: %s", e)
+        raise
+
+
+def convert_doc_to_docx(doc_data: bytes) -> bytes:
+    """Конвертирует DOC файл в DOCX используя LibreOffice.
+    
+    Args:
+        doc_data: Бинарные данные DOC файла
+    
+    Returns:
+        Бинарные данные DOCX файла
+    """
+    try:
+        # Создаём временные файлы для входа и выхода
+        with tempfile.NamedTemporaryFile(suffix='.doc', delete=False) as tmp_input:
+            tmp_input.write(doc_data)
+            tmp_input_path = tmp_input.name
+        
+        # Генерируем путь для выходного файла
+        tmp_output_dir = tempfile.gettempdir()
+        tmp_output_name = os.path.splitext(os.path.basename(tmp_input_path))[0] + '.docx'
+        tmp_output_path = os.path.join(tmp_output_dir, tmp_output_name)
+        
+        try:
+            # Используем LibreOffice для конвертации
+            cmd = [
+                'libreoffice',
+                '--headless',
+                '--convert-to', 'docx',
+                '--outdir', tmp_output_dir,
+                tmp_input_path
+            ]
+            
+            logger.info("Converting DOC to DOCX using LibreOffice...")
+            result = subprocess.run(cmd, capture_output=True, timeout=30)
+            
+            if result.returncode != 0:
+                raise RuntimeError(f"LibreOffice conversion failed: {result.stderr.decode()}")
+            
+            # Читаем конвертированный файл
+            if not os.path.exists(tmp_output_path):
+                raise FileNotFoundError(f"Output file not created: {tmp_output_path}")
+            
+            with open(tmp_output_path, 'rb') as f:
+                docx_data = f.read()
+            
+            return docx_data
+        finally:
+            # Удаляем временные файлы
+            if os.path.exists(tmp_input_path):
+                os.unlink(tmp_input_path)
+            if os.path.exists(tmp_output_path):
+                os.unlink(tmp_output_path)
+    except Exception as e:
+        logger.error("Failed to convert DOC to DOCX: %s", e)
         raise
 
 
