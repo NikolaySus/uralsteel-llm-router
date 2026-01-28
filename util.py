@@ -553,7 +553,9 @@ async def convert_to_md_async(url: str, docling_address: str):
 
     # Список поддерживаемых форматов
     from_formats = ["docx", "pptx", "html", "image",
-                    "pdf", "asciidoc", "md", "xlsx", "doc"]
+                    "pdf", "asciidoc", "md", "csv",
+                    "xlsx", "xml_uspto", "xml_jats",
+                    "mets_gbs", "json_docling", "audio", "vtt"]
 
     filename = ""
     file_extension = ""
