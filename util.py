@@ -18,6 +18,12 @@ import httpx
 import pymupdf
 from tavily import TavilyClient
 
+try:
+    from docx import Document
+    HAS_PYTHON_DOCX = True
+except ImportError:
+    HAS_PYTHON_DOCX = False
+
 from logger import logger
 
 
@@ -298,7 +304,34 @@ def docx_to_markdown_via_markitdown(file_data: bytes, file_extension: str = 'doc
 
 
 def convert_doc_to_docx(doc_data: bytes) -> bytes:
-    """Конвертирует DOC файл в DOCX используя LibreOffice.
+    """Конвертирует DOC файл в DOCX используя LibreOffice или python-docx.
+    
+    Args:
+        doc_data: Бинарные данные DOC файла
+    
+    Returns:
+        Бинарные данные DOCX файла
+    """
+    try:
+        # Сначала пробуем LibreOffice
+        return _convert_doc_to_docx_libreoffice(doc_data)
+    except Exception as e:
+        logger.warning("LibreOffice conversion failed: %s. Trying python-docx...", e)
+        
+        # Если LibreOffice не сработал, пробуем python-docx
+        if HAS_PYTHON_DOCX:
+            try:
+                return _convert_doc_to_docx_python_docx(doc_data)
+            except Exception as e2:
+                logger.error("python-docx conversion also failed: %s", e2)
+                raise
+        else:
+            raise RuntimeError("Both LibreOffice and python-docx conversion failed. "
+                             "Install python-docx: pip install python-docx")
+
+
+def _convert_doc_to_docx_libreoffice(doc_data: bytes) -> bytes:
+    """Конвертирует DOC в DOCX используя LibreOffice (headless).
     
     Args:
         doc_data: Бинарные данные DOC файла
@@ -321,53 +354,54 @@ def convert_doc_to_docx(doc_data: bytes) -> bytes:
             # Ожидаемый путь выходного файла
             tmp_output_path = os.path.join(tmp_work_dir, 'input.docx')
             
-            # Используем LibreOffice для конвертации
-            cmd = [
-                'libreoffice',
-                '--headless',
-                '--norestore',
-                '--convert-to', 'docx',
-                '--outdir', tmp_work_dir,
-                tmp_input_path
+            # Пробуем разные команды запуска LibreOffice
+            commands = [
+                ['libreoffice', '--headless', '--norestore', '--convert-to', 'docx', '--outdir', tmp_work_dir, tmp_input_path],
+                ['soffice', '--headless', '--norestore', '--convert-to', 'docx', '--outdir', tmp_work_dir, tmp_input_path],
             ]
             
-            logger.info("Converting DOC to DOCX using LibreOffice...")
-            logger.debug("Command: %s", ' '.join(cmd))
-            result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
+            last_error = None
+            for cmd in commands:
+                try:
+                    logger.debug("Trying command: %s", ' '.join(cmd))
+                    result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
+                    
+                    logger.debug("Return code: %d", result.returncode)
+                    if result.stdout:
+                        logger.debug("stdout: %s", result.stdout)
+                    if result.stderr:
+                        logger.debug("stderr: %s", result.stderr)
+                    
+                    # Логируем содержимое рабочей директории
+                    files_in_dir = os.listdir(tmp_work_dir)
+                    logger.debug("Files in work directory: %s", files_in_dir)
+                    
+                    if result.returncode == 0 and os.path.exists(tmp_output_path):
+                        # Успешно!
+                        with open(tmp_output_path, 'rb') as f:
+                            docx_data = f.read()
+                        logger.debug("Successfully converted DOC to DOCX (%d bytes)", len(docx_data))
+                        return docx_data
+                    elif result.returncode == 0:
+                        # Проверяем, создан ли DOCX файл с другим именем
+                        docx_files = [f for f in files_in_dir if f.endswith('.docx')]
+                        if docx_files:
+                            tmp_output_path = os.path.join(tmp_work_dir, docx_files[0])
+                            with open(tmp_output_path, 'rb') as f:
+                                docx_data = f.read()
+                            logger.debug("Successfully converted DOC to DOCX (%d bytes)", len(docx_data))
+                            return docx_data
+                    
+                    last_error = f"Return code: {result.returncode}, Files: {files_in_dir}"
+                except FileNotFoundError:
+                    last_error = f"Command not found: {cmd[0]}"
+                    continue
+                except Exception as e:
+                    last_error = str(e)
+                    continue
             
-            logger.debug("LibreOffice return code: %d", result.returncode)
-            if result.stdout:
-                logger.debug("LibreOffice stdout: %s", result.stdout)
-            if result.stderr:
-                logger.debug("LibreOffice stderr: %s", result.stderr)
-            
-            # Логируем содержимое рабочей директории
-            try:
-                files_in_dir = os.listdir(tmp_work_dir)
-                logger.debug("Files in work directory: %s", files_in_dir)
-            except Exception as e:
-                logger.error("Could not list work directory: %s", e)
-            
-            if result.returncode != 0:
-                raise RuntimeError(f"LibreOffice conversion failed with code {result.returncode}: {result.stderr}")
-            
-            # Проверяем, создан ли выходной файл
-            if not os.path.exists(tmp_output_path):
-                # Если нет, ищем любой DOCX файл в директории
-                docx_files = [f for f in os.listdir(tmp_work_dir) if f.endswith('.docx')]
-                if not docx_files:
-                    raise FileNotFoundError(
-                        f"No DOCX file created by LibreOffice in {tmp_work_dir}. "
-                        f"Files found: {os.listdir(tmp_work_dir)}")
-                tmp_output_path = os.path.join(tmp_work_dir, docx_files[0])
-                logger.debug("Found converted file: %s", tmp_output_path)
-            
-            # Читаем конвертированный файл
-            with open(tmp_output_path, 'rb') as f:
-                docx_data = f.read()
-            
-            logger.debug("Successfully converted DOC to DOCX (%d bytes)", len(docx_data))
-            return docx_data
+            # Если мы здесь, то ни одна команда не сработала
+            raise RuntimeError(f"LibreOffice conversion failed. Last error: {last_error}")
         finally:
             # Удаляем всю работочную директорию и её содержимое
             import shutil
@@ -375,7 +409,46 @@ def convert_doc_to_docx(doc_data: bytes) -> bytes:
                 shutil.rmtree(tmp_work_dir, ignore_errors=True)
                 logger.debug("Cleaned up work directory: %s", tmp_work_dir)
     except Exception as e:
-        logger.error("Failed to convert DOC to DOCX: %s", e)
+        logger.debug("LibreOffice conversion failed: %s", e)
+        raise
+
+
+def _convert_doc_to_docx_python_docx(doc_data: bytes) -> bytes:
+    """Конвертирует DOC в DOCX используя python-docx (для простых DOC файлов).
+    
+    Примечание: Это работает только для простых DOC файлов. Для сложных форматирований
+    используйте LibreOffice.
+    
+    Args:
+        doc_data: Бинарные данные DOC файла
+    
+    Returns:
+        Бинарные данные DOCX файла
+    """
+    if not HAS_PYTHON_DOCX:
+        raise ImportError("python-docx is not installed. Install it with: pip install python-docx")
+    
+    try:
+        import io
+        logger.info("Converting DOC to DOCX using python-docx...")
+        
+        # python-docx может открывать DOCX, но не DOC напрямую
+        # Однако, некоторые .doc файлы на самом деле DOCX в старом имени
+        # Попробуем открыть как DOCX в памяти
+        try:
+            doc = Document(io.BytesIO(doc_data))
+            
+            # Сохраняем в DOCX формат
+            output = io.BytesIO()
+            doc.save(output)
+            docx_data = output.getvalue()
+            
+            logger.debug("Successfully converted DOC to DOCX using python-docx (%d bytes)", len(docx_data))
+            return docx_data
+        except Exception as e:
+            raise RuntimeError(f"python-docx failed to process file: {e}")
+    except Exception as e:
+        logger.error("Failed to convert DOC to DOCX using python-docx: %s", e)
         raise
 
 
