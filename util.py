@@ -8,7 +8,10 @@ import urllib
 import imghdr
 import asyncio
 import json
+import os
+import tempfile
 
+from markitdown import MarkItDown
 import requests
 import httpx
 import pymupdf
@@ -258,23 +261,20 @@ def detect_file_format(file_data: bytes) -> str:
     return ''
 
 
-def docx_to_markdown_via_markitdown(docx_data: bytes) -> str:
-    """Конвертирует DOCX документ в markdown с помощью markitdown.
+def docx_to_markdown_via_markitdown(file_data: bytes, file_extension: str = 'docx') -> str:
+    """Конвертирует документ (DOCX/DOC) в markdown с помощью markitdown.
     
     Args:
-        docx_data: Бинарные данные DOCX файла
+        file_data: Бинарные данные файла
+        file_extension: Расширение файла ('docx' или 'doc')
     
     Returns:
         Markdown контент документа
     """
-    import tempfile
-    import os
-    from markitdown import MarkItDown
-    
     try:
-        # Создаём временный файл для DOCX
-        with tempfile.NamedTemporaryFile(suffix='.docx', delete=False) as tmp_file:
-            tmp_file.write(docx_data)
+        # Создаём временный файл с правильным расширением
+        with tempfile.NamedTemporaryFile(suffix=f'.{file_extension}', delete=False) as tmp_file:
+            tmp_file.write(file_data)
             tmp_path = tmp_file.name
         
         try:
@@ -287,7 +287,7 @@ def docx_to_markdown_via_markitdown(docx_data: bytes) -> str:
             if os.path.exists(tmp_path):
                 os.unlink(tmp_path)
     except Exception as e:
-        logger.error("Failed to convert DOCX to markdown using markitdown: %s", e)
+        logger.error("Failed to convert document to markdown using markitdown: %s", e)
         raise
 
 
@@ -402,13 +402,13 @@ async def convert_to_md_async(url: str, docling_address: str):
                 # Если у нас уже есть данные файла в переменной file_data (из текущего блока try)
                 # То используем их, иначе скачиваем заново
                 try:
-                    md_content = docx_to_markdown_via_markitdown(file_data)
+                    md_content = docx_to_markdown_via_markitdown(file_data, file_extension)
                 except NameError:
                     # file_data не определён, скачиваем файл заново
                     async_client = httpx.AsyncClient(timeout=60.0)
                     get_response = await async_client.get(url)
                     file_data = get_response.content
-                    md_content = docx_to_markdown_via_markitdown(file_data)
+                    md_content = docx_to_markdown_via_markitdown(file_data, file_extension)
                 return filename, md_content
             
             else:
