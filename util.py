@@ -263,6 +263,7 @@ def engineer(query: str, base_url: str):
 
         # Извлекаем текст ответа
         response_text = data.get("response", "")
+        response_text = response_text.split("### References")[0]
 
         # Обрабатываем ссылки
         references = []
