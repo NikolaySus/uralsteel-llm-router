@@ -29,7 +29,7 @@ from auth_interceptor import AuthInterceptor
 from logger import logger
 from util import (
     build_user_message, websearch, check_docling_health, convert_to_md,
-    get_messages_wo_b64_images, engineer
+    get_messages_wo_b64_images, engineer, sanitize_bucket_name
 )
 
 
@@ -400,6 +400,8 @@ def process_engineer_url(url):
 
     # Split URL into bucket_name and file_path
     bucket_name, file_path = url.split("/", 1)
+
+    bucket_name = sanitize_bucket_name(bucket_name)
 
     # Replace any file extension with .pdf
     if "." in file_path:

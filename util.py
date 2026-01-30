@@ -192,6 +192,27 @@ def build_user_message(text_message: str, md_docs: dict,
     return {"role": "user", "content": content}, is_there_images
 
 
+def sanitize_bucket_name(bucket_name):
+    """Sanitize bucket name to comply with S3 naming rules."""
+    # Replace underscores with hyphens
+    sanitized = bucket_name.replace('_', '-')
+    
+    # Ensure it starts and ends with alphanumeric character
+    sanitized = sanitized.strip('.-')
+    
+    # Remove any invalid characters (only allow lowercase alphanumeric and hyphens)
+    sanitized = re.sub(r'[^a-z0-9\-]', '', sanitized.lower())
+    
+    # Ensure length is between 3 and 63 characters
+    if len(sanitized) > 63:
+        sanitized = sanitized[:63]
+    elif len(sanitized) < 3:
+        # If too short, pad with default name
+        sanitized = sanitized.ljust(3, 'x')
+    
+    return sanitized
+
+
 def engineer(query: str, base_url: str):
     """Выполняет инженерный запрос к RAG-системе и возвращает обработанный результат.
 
