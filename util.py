@@ -192,6 +192,82 @@ def build_user_message(text_message: str, md_docs: dict,
     return {"role": "user", "content": content}, is_there_images
 
 
+def engineer(query: str, base_url: str):
+    """Выполняет инженерный запрос к RAG-системе и возвращает обработанный результат.
+
+    Args:
+        query: Текстовый запрос для поиска информации
+        base_url: Базовый URL RAG-сервиса (например, 'http://localhost:9621')
+
+    Returns:
+        Кортеж (response_text, references), где:
+        - response_text: Текст ответа из поля "response"
+        - references: Список словарей с полями "title" и "url" для ссылок
+    """
+    # Постоянный user_prompt, не зависящий от аргументов
+    USER_PROMPT = "Необходимо извлечь все данные по марке стали для выбора химического состава сплава и технологии обработки в зависимости от запроса пользователя"
+
+    # Формируем URL для запроса
+    url = f"{base_url}/query"
+
+    # Формируем payload для POST-запроса
+    payload = {
+        "query": query,
+        "mode": "mix",
+        "top_k": 40,
+        "chunk_top_k": 20,
+        "max_entity_tokens": 6000,
+        "max_relation_tokens": 8000,
+        "max_total_tokens": 30000,
+        "user_prompt": USER_PROMPT,
+        "enable_rerank": True,
+        "include_references": True,
+        "include_chunk_content": False,
+        "stream": False
+    }
+
+    # Заголовки запроса
+    headers = {
+        "accept": "application/json",
+        "Content-Type": "application/json"
+    }
+
+    try:
+        # Выполняем POST-запрос
+        response = requests.post(url, json=payload, headers=headers)
+        response.raise_for_status()  # Вызовет исключение для HTTP ошибок
+
+        # Парсим JSON-ответ
+        data = response.json()
+
+        # Извлекаем текст ответа
+        response_text = data.get("response", "")
+
+        # Обрабатываем ссылки
+        references = []
+        for ref in data.get("references", []):
+            # Извлекаем file_path и преобразуем в URL
+            file_path = ref.get("file_path", "")
+            # Удаляем все символы до "hierarchy_trailing_20260126_182731"
+            if "hierarchy_trailing_20260126_182731" in file_path:
+                url_path = file_path.split("hierarchy_trailing_20260126_182731", 1)[1]
+                url_path = "hierarchy_trailing_20260126_182731" + url_path
+            else:
+                url_path = file_path  # Если паттерн не найден, используем как есть
+
+            references.append({
+                "title": ref.get("reference_id", ""),
+                "url": url_path
+            })
+
+        return response_text, references
+
+    except requests.exceptions.RequestException as e:
+        logger.error(f"Ошибка при выполнении запроса к RAG-сервису: {e}")
+        # Возвращаем пустые значения в случае ошибки
+        return "", []
+
+
 def websearch(query: str, tavily_base_url: str):
     """Выполняет веб-поиск по запросу и возвращает список результатов.
     

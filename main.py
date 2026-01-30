@@ -5,7 +5,7 @@ uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
 --grpc_python_out=. llm.proto
 """
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from zoneinfo import ZoneInfo
 from concurrent import futures
 from io import BytesIO
@@ -29,7 +29,7 @@ from auth_interceptor import AuthInterceptor
 from logger import logger
 from util import (
     build_user_message, websearch, check_docling_health, convert_to_md,
-    get_messages_wo_b64_images
+    get_messages_wo_b64_images, engineer
 )
 
 
@@ -111,6 +111,24 @@ TOOLS = [
         "function": {
             "name": "image_gen",
             "description": "Generate a 1024x1024 square image based on the query and get its url.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "engineer",
+            "description": "Retrieve relevant information and recommendations from an AI-agent on calculating the steel grade formula depending on the conditions.",
             "strict": True,
             "parameters": {
                 "type": "object",
@@ -301,6 +319,41 @@ def transcribe_audio(audio_buffer: BytesIO,
     return text, proto
 
 
+def generate_presigned_download_url(bucket_name, file_name, expires_hours=24):
+    """
+    Generate a presigned URL for direct download from MinIO.
+
+    Args:
+        bucket_name: Name of the bucket
+        file_name: Name of the file in the bucket
+        expires_hours: URL validity period in hours
+
+    Returns:
+        Presigned URL as string or None if error occurs
+    """
+    try:
+        # Initialize MinIO client inside the function
+        minio_client = Minio(
+            MINIO_ADDRESS,
+            access_key=MINIO_ACCESS_KEY,
+            secret_key=MINIO_SECRET_KEY,
+            secure=True
+        )
+
+        # Generate presigned URL (valid for specified hours)
+        url = minio_client.presigned_get_object(
+            bucket_name,
+            file_name,
+            expires=timedelta(hours=expires_hours)
+        )
+        return url
+    except S3Error as e:
+        logger.error("Error generating presigned URL: %s", str(e))
+        return None
+    except Exception as e:
+        logger.error("Unexpected error generating presigned URL: %s", str(e))
+        return None
+
 def image_gen(query: str):
     """Генерирует изображение по запросу и возвращает его URL."""
     result = None
@@ -331,6 +384,32 @@ def image_gen(query: str):
         )
     )
 
+def process_engineer_url(url):
+    """
+    Process engineer URL to extract bucket name and file name,
+    then generate presigned download URL with .pdf extension.
+
+    Args:
+        url: Original URL in format "bucket_name/path/to/file.ext"
+
+    Returns:
+        Processed URL with presigned download link and .pdf extension
+    """
+    if not url or "/" not in url:
+        return url
+
+    # Split URL into bucket_name and file_path
+    bucket_name, file_path = url.split("/", 1)
+
+    # Replace any file extension with .pdf
+    if "." in file_path:
+        file_path = file_path.rsplit(".", 1)[0] + ".pdf"
+
+    # Generate presigned download URL
+    presigned_url = generate_presigned_download_url(bucket_name, file_path)
+
+    return presigned_url if presigned_url else url
+
 
 def call_function(log_uid, name, args):
     """Вызов функции инструмента по имени с аргументами args."""
@@ -351,6 +430,19 @@ def call_function(log_uid, name, args):
                           ensure_ascii=False), meta
     elif name == "image_gen":
         result, meta = image_gen(**args)
+        return result, meta
+    elif name == "engineer":
+        result, meta = engineer(**args, base_url="http://localhost:9621")
+        meta = llm_pb2.ToolMetadataResponse(
+            websearch=llm_pb2.ToolWebSearchMetadata(
+                item=[llm_pb2.ToolWebSearchMetadataItem(
+                        url=process_engineer_url(item["url"]),
+                        title=item["title"]
+                    )
+                    for item
+                    in meta] if isinstance(meta, list) else []
+            )
+        )
         return result, meta
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
