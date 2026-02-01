@@ -1087,8 +1087,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 item["tool_calls"][0]["function"]["arguments"]
                             )
                         )
-                        logger.debug("(%s) tool output: %s\n%s",
-                                     log_uid, result[:420], str(meta)[:420])
+                        #logger.debug("(%s) tool output: %s\n%s",
+                        #             log_uid, result[:420], str(meta)[:420])
                         if meta is not None:
                             yield llm_pb2.NewMessageResponse(
                                 tool_metadata=meta
