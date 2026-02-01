@@ -458,6 +458,9 @@ def call_function(log_uid, name, args):
                 item=meta_proc
             )
         )
+        result, _ = build_user_message("THIS IS TOOL CALL OUTPUT",
+                                       {"CONCATENATION OF REFERENCE DOCUMENTS":result}, [],
+                                       IMGHDR_TO_MIME)
         return result, meta
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
@@ -1090,11 +1093,15 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             yield llm_pb2.NewMessageResponse(
                                 tool_metadata=meta
                             )
-                        messages.append({
-                            "role": "tool",
-                            "tool_call_id": item["tool_calls"][0]["id"],
-                            "content": result
-                        })
+                        if isinstance(result, dict) and "role" in result:
+                            # Если результат уже в формате сообщения, добавляем его
+                            messages.append(result)
+                        else:
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": item["tool_calls"][0]["id"],
+                                "content": result
+                            })
                         summ = 0
                         for message in messages:
                             summ += len(message.get("content", ""))
