@@ -1111,6 +1111,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 "tool_call_id": item["tool_calls"][0]["id"],
                                 "content": result
                             })
+                            logger.info(
+                                "(%s) NOT DONE FUCKING ANYTHING!1!!!!!111111",
+                                log_uid)
                         summ = 0
                         for message in messages:
                             summ += len(message.get("content", ""))
