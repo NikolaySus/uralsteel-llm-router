@@ -229,7 +229,7 @@ def engineer(query: str, base_url: str):
     USER_PROMPT = "Необходимо извлечь все данные по марке стали для выбора химического состава сплава и технологии обработки в зависимости от запроса пользователя"
 
     # Формируем URL для запроса
-    url = f"{base_url}/query/data"
+    url = f"{base_url}/query"
 
     # Формируем payload для POST-запроса
     payload = {
@@ -261,14 +261,15 @@ def engineer(query: str, base_url: str):
         # Парсим JSON-ответ
         data = response.json()
 
-        # Обрабатываем ссылки
-        file_paths = [chunk['file_path'] for chunk in data['data']['chunks']]
-        response_text = ""
-        references = []
+        # Извлекаем текст ответа
+        response_text = data.get("response", "")
+        response_text = response_text.split("### References")[0]
 
-        for title, file_path in enumerate(file_paths):
-            with open(file_path) as file:
-                response_text += f"\n\n## DOCUMENT [{title + 1}]\n" + file.read()
+        # Обрабатываем ссылки
+        references = []
+        for ref in data.get("references", []):
+            # Извлекаем file_path и преобразуем в URL
+            file_path = ref.get("file_path", "")
             # Удаляем все символы до "hierarchy_trailing_20260126_182731"
             if "hierarchy_trailing_20260126_182731" in file_path:
                 url_path = file_path.split("hierarchy_trailing_20260126_182731", 1)[1]
@@ -277,7 +278,7 @@ def engineer(query: str, base_url: str):
                 url_path = file_path  # Если паттерн не найден, используем как есть
 
             references.append({
-                "title": str(title + 1),
+                "title": ref.get("reference_id", ""),
                 "url": url_path
             })
 
