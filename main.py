@@ -128,7 +128,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "engineer",
-            "description": "Retrieve relevant information and recommendations from an AI-agent on calculating the steel grade formula depending on the conditions.",
+            "description": "Retrieve relevant information and rules from a knowledge base on calculating the steel grade formula depending on the conditions.",
             "strict": True,
             "parameters": {
                 "type": "object",
