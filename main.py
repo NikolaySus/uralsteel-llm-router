@@ -1095,6 +1095,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             )
                         if isinstance(result, dict) and "role" in result:
                             # Если результат уже в формате сообщения, добавляем его
+                            messages.append({
+                                "role": "tool",
+                                "tool_call_id": item["tool_calls"][0]["id"],
+                                "content": "The actual tool output will be provided as next user message"
+                            })
                             messages.append(result)
                         else:
                             messages.append({
