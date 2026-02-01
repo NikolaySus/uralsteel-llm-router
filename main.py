@@ -1098,9 +1098,13 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             messages.append({
                                 "role": "tool",
                                 "tool_call_id": item["tool_calls"][0]["id"],
-                                "content": "The actual tool output will be provided as next user message"
+                                "content": "The actual tool output will be provided as next assistant message"
                             })
+                            result["role"] = "assistant"
                             messages.append(result)
+                            logger.info(
+                                "(%s) DONE SOME INSANE SHIT!1!!!!!111111",
+                                log_uid)
                         else:
                             messages.append({
                                 "role": "tool",
