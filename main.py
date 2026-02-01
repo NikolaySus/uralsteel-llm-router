@@ -444,7 +444,7 @@ def call_function(log_uid, name, args):
             for item in meta:
                 url = process_engineer_url(item["url"])
                 title=item["title"]
-                result += f'\n# REFERENCE DOCUMENT [{title}] "{url.rsplit(".", 1)[0]}"\n' + "\n".join(
+                result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + "\n".join(
                     [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
                      for i, u
                      in enumerate(remote_pdf_to_b64_images(url))])
