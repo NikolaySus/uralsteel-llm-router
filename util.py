@@ -213,6 +213,14 @@ def sanitize_bucket_name(bucket_name):
     return sanitized
 
 
+def proc_ref_list(text):
+    result = {}
+    for match in re.findall(r'- \[(\d+)\] (.+)', text):
+        num, txt = match
+        result[num] = txt.strip()
+    return result
+
+
 def engineer(query: str, base_url: str):
     """Выполняет инженерный запрос к RAG-системе и возвращает обработанный результат.
 
@@ -264,6 +272,7 @@ def engineer(query: str, base_url: str):
         # Извлекаем текст ответа
         response_text = data.get("response", "")
         response_text = response_text.split("### References")[1]
+        check = proc_ref_list(response_text)
 
         # Обрабатываем ссылки
         references = []
@@ -277,12 +286,14 @@ def engineer(query: str, base_url: str):
             else:
                 url_path = file_path  # Если паттерн не найден, используем как есть
 
-            references.append({
-                "title": ref.get("reference_id", ""),
-                "url": url_path
-            })
+            title = ref.get("reference_id", "")
+            if title in check:
+                references.append({
+                    "title": title,
+                    "url": url_path
+                })
 
-        return response_text, references
+        return references
 
     except requests.exceptions.RequestException as e:
         logger.error(f"Ошибка при выполнении запроса к RAG-сервису: {e}")

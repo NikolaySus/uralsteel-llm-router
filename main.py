@@ -28,7 +28,7 @@ import llm_pb2_grpc
 from auth_interceptor import AuthInterceptor
 from logger import logger
 from util import (
-    build_user_message, websearch, check_docling_health, convert_to_md,
+    build_user_message, remote_pdf_to_b64_images, websearch, check_docling_health, convert_to_md,
     get_messages_wo_b64_images, engineer, sanitize_bucket_name
 )
 
@@ -168,6 +168,9 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
   inline code, or quoted blocks.
 - Output the document as direct, top-level Markdown content,
   suitable for immediate Markdown-to-PDF conversion.
+If the user asks to calculate the steel grade formula depending on the conditions, follow these rules:
+- You MUST ask user to tell the steel grade and conditions.
+- ALWAYS add references list at the end of your final answer.
 """
 # If the user asks to do something that requires the following tools:
 # """
@@ -434,15 +437,25 @@ def call_function(log_uid, name, args):
         result, meta = image_gen(**args)
         return result, meta
     elif name == "engineer":
-        result, meta = engineer(**args, base_url="http://localhost:9621")
+        meta = engineer(**args, base_url="http://localhost:9621")
+        result = ""
+        meta_proc = []
+        if isinstance(meta, list):
+            for item in meta:
+                url = process_engineer_url(item["url"])
+                title=item["title"]
+                result += f'\n# REFERENCE DOCUMENT [{title}] "{url.rsplit(".", 1)[0]}"\n' + "\n".join(
+                    [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
+                     for i, u
+                     in enumerate(remote_pdf_to_b64_images(url))])
+                meta_proc.append(llm_pb2.ToolWebSearchMetadataItem(
+                        url=url,
+                        title=title
+                    ))
+
         meta = llm_pb2.ToolMetadataResponse(
             websearch=llm_pb2.ToolWebSearchMetadata(
-                item=[llm_pb2.ToolWebSearchMetadataItem(
-                        url=process_engineer_url(item["url"]),
-                        title=item["title"]
-                    )
-                    for item
-                    in meta] if isinstance(meta, list) else []
+                item=meta_proc
             )
         )
         return result, meta
