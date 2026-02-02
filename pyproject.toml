@@ -7,6 +7,7 @@ requires-python = ">=3.12"
 dependencies = [
     "googleapis-common-protos>=1.72.0",
     "grpcio>=1.76.0",
+    "grpcio-health-checking>=1.76.0",
     "grpcio-tools>=1.76.0",
     "markdownify>=1.2.0",
     "markitdown[all]>=0.1.4",
