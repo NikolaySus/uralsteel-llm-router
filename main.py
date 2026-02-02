@@ -1006,80 +1006,130 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 try:
                     item = None
                     summ = 0
-                    for message in messages:
-                        summ += len(message.get("content", ""))
-                    sumr = 0
-                    for r, i, d in proc_llm_stream_responses(
-                        price_info, log_uid, messages, function_tool, api_to_use,
-                        key_to_use, dir_to_use, model_to_use, summ, sumr
-                    ):
-                        if d is not None:
-                            content += d
-                            sumr = len(content)
-                        if context.is_active() is False:
-                            logger.info(
-                                "(%s) client cancelled, stopping stream",
-                                log_uid)
-                            break
-                        if i is not None:
-                            item = i
-                        yield r
-                    if item is not None:
-                        messages.append(item)
-                        if item.get("tool_calls") and len(item["tool_calls"]) > 0:
-                            result, meta = call_function(
-                                log_uid,
-                                item["tool_calls"][0]["function"]["name"],
-                                json.loads(
-                                    item["tool_calls"][0]["function"]["arguments"]
-                                )
-                            )
-                            #logger.debug("(%s) tool output: %s\n%s",
-                            #             log_uid, result[:420], str(meta)[:420])
-                            if meta is not None:
-                                yield llm_pb2.NewMessageResponse(
-                                    tool_metadata=meta
-                                )
-                            if isinstance(result, dict) and "role" in result:
-                                # Если результат уже в формате сообщения, добавляем его
-                                messages.append({
-                                    "role": "tool",
-                                    "tool_call_id": item["tool_calls"][0]["id"],
-                                    "content": "The actual tool output will be provided as next assistant message"
-                                })
-                                result["role"] = "assistant"
-                                messages.append(result)
-                                logger.info(
-                                    "(%s) DONE SOME INSANE SHIT!1!!!!!111111",
-                                    log_uid)
-                            else:
-                                messages.append({
-                                    "role": "tool",
-                                    "tool_call_id": item["tool_calls"][0]["id"],
-                                    "content": result
-                                })
-                                logger.info(
-                                    "(%s) NOT DONE FUCKING ANYTHING!1!!!!!111111",
-                                    log_uid)
-                        else:
-                            raise ValueError("Tool call data is missing or empty in the response from LLM")
-                        summ = 0
+                    try:
                         for message in messages:
                             summ += len(message.get("content", ""))
-                        sumr = 0
+                    except Exception as e:
+                        logger.error("Stream error [1 - message processing]: %s", e)
+                        raise
+                    
+                    sumr = 0
+                    try:
                         for r, i, d in proc_llm_stream_responses(
-                            price_info, log_uid, messages, "none", api_to_use, key_to_use,
-                            dir_to_use, model_to_use, summ, sumr
+                            price_info, log_uid, messages, function_tool, api_to_use,
+                            key_to_use, dir_to_use, model_to_use, summ, sumr
                         ):
-                            if d is not None:
-                                content += d
-                                sumr = len(content)
-                            if context.is_active() is False:
-                                logger.info(
-                                    "(%s) client cancelled, stopping stream",
-                                    log_uid)
-                                break
-                            yield r
+                            try:
+                                if d is not None:
+                                    content += d
+                                    sumr = len(content)
+                                if context.is_active() is False:
+                                    logger.info(
+                                        "(%s) client cancelled, stopping stream",
+                                        log_uid)
+                                    break
+                                if i is not None:
+                                    item = i
+                                yield r
+                            except Exception as e:
+                                logger.error("Stream error [2 - stream iteration]: %s", e)
+                                raise
+                    except Exception as e:
+                        logger.error("Stream error [3 - proc_llm_stream_responses]: %s", e)
+                        raise
+                        
+                    if item is not None:
+                        try:
+                            messages.append(item)
+                            try:
+                                if item.get("tool_calls") and len(item["tool_calls"]) > 0:
+                                    try:
+                                        result, meta = call_function(
+                                            log_uid,
+                                            item["tool_calls"][0]["function"]["name"],
+                                            json.loads(
+                                                item["tool_calls"][0]["function"]["arguments"]
+                                            )
+                                        )
+                                    except (IndexError, KeyError, json.JSONDecodeError) as e:
+                                        logger.error("Stream error [4 - tool call processing]: %s", e)
+                                        logger.error("(%s) tool_calls data: %s", log_uid, str(item.get("tool_calls")))
+                                        raise
+                                    #logger.debug("(%s) tool output: %s\n%s",
+                                    #             log_uid, result[:420], str(meta)[:420])
+                                    if meta is not None:
+                                        yield llm_pb2.NewMessageResponse(
+                                            tool_metadata=meta
+                                        )
+                                    if isinstance(result, dict) and "role" in result:
+                                        # Если результат уже в формате сообщения, добавляем его
+                                        try:
+                                            messages.append({
+                                                "role": "tool",
+                                                "tool_call_id": item["tool_calls"][0]["id"],
+                                                "content": "The actual tool output will be provided as next assistant message"
+                                            })
+                                            result["role"] = "assistant"
+                                            messages.append(result)
+                                            logger.info(
+                                                "(%s) DONE SOME INSANE SHIT!1!!!!!111111",
+                                                log_uid)
+                                        except (IndexError, KeyError) as e:
+                                            logger.error("Stream error [5 - tool message formatting]: %s", e)
+                                            raise
+                                    else:
+                                        try:
+                                            messages.append({
+                                                "role": "tool",
+                                                "tool_call_id": item["tool_calls"][0]["id"],
+                                                "content": result
+                                            })
+                                            logger.info(
+                                                "(%s) NOT DONE FUCKING ANYTHING!1!!!!!111111",
+                                                log_uid)
+                                        except (IndexError, KeyError) as e:
+                                            logger.error("Stream error [6 - tool message formatting]: %s", e)
+                                            raise
+                                else:
+                                    raise ValueError("Tool call data is missing or empty in the response from LLM")
+                            except (IndexError, KeyError, TypeError) as e:
+                                logger.error("Stream error [7 - tool validation]: %s", e)
+                                logger.error("(%s) item data: %s", log_uid, str(item))
+                                raise
+                        except Exception as e:
+                            logger.error("Stream error [8 - tool response processing]: %s", e)
+                            raise
+                            
+                        summ = 0
+                        try:
+                            for message in messages:
+                                summ += len(message.get("content", ""))
+                        except Exception as e:
+                            logger.error("Stream error [9 - message content calculation]: %s", e)
+                            raise
+                            
+                        sumr = 0
+                        try:
+                            for r, i, d in proc_llm_stream_responses(
+                                price_info, log_uid, messages, "none", api_to_use, key_to_use,
+                                dir_to_use, model_to_use, summ, sumr
+                            ):
+                                try:
+                                    if d is not None:
+                                        content += d
+                                        sumr = len(content)
+                                    if context.is_active() is False:
+                                        logger.info(
+                                            "(%s) client cancelled, stopping stream",
+                                            log_uid)
+                                        break
+                                    yield r
+                                except Exception as e:
+                                    logger.error("Stream error [10 - second stream iteration]: %s", e)
+                                    raise
+                        except Exception as e:
+                            logger.error("Stream error [11 - second proc_llm_stream_responses]: %s", e)
+                            raise
                 except Exception as e:
                     logger.error("Stream error: %s", e)
                     context.set_code(grpc.StatusCode.INTERNAL)
