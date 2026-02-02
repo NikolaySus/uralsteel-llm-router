@@ -105,7 +105,7 @@ headers = {
 
 try:
     # Выполняем POST-запрос
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, headers=headers)
     response.raise_for_status()  # Вызовет исключение для HTTP ошибок
 
     # Парсим JSON-ответ
