@@ -235,8 +235,6 @@ def engineer(query: str, base_url: str):
         - response_text: Текст ответа из поля "response"
         - references: Список словарей с полями "title" и "url" для ссылок
     """
-    if query == "ABORT":
-        return 0
     # Постоянный user_prompt, не зависящий от аргументов
     USER_PROMPT = "Необходимо извлечь все данные по марке стали для выбора химического состава сплава и технологии обработки в зависимости от запроса пользователя"
 
@@ -253,7 +251,7 @@ def engineer(query: str, base_url: str):
         "max_relation_tokens": 8000,
         "max_total_tokens": 30000,
         "user_prompt": USER_PROMPT,
-        "enable_rerank": True,
+        "enable_rerank": False,
         "include_references": True,
         "include_chunk_content": False,
         "stream": False
@@ -264,6 +262,7 @@ def engineer(query: str, base_url: str):
         "accept": "application/json",
         "Content-Type": "application/json"
     }
+    logger.info("Called engineer: %s", query)
 
     try:
         # Выполняем POST-запрос

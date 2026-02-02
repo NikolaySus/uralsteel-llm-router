@@ -174,7 +174,6 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
   suitable for immediate Markdown-to-PDF conversion.
 If the user asks to calculate the steel grade formula depending on the conditions, follow these rules:
 - Do not tell the user that the document was scanned or printed poorly somewhere; he won't be interested.
-- You MUST ask user to tell the steel grade if not provided. You can abort tool call by passing ABORT as query.
 - If you use a document in your response, refer to it in square brackets by its number.
 - ALWAYS add references/sources list at the end of your final answer in the same language as user request.
 - You MUST provide calculations of the values ​​of coefficients/equivalents that are used in the process of solving the problem.
@@ -384,6 +383,7 @@ def call_function(log_uid, name, args):
         meta = engineer(**args, base_url="http://localhost:9621")
         result = ""
         meta_proc = []
+        logger.info("(%s) сalled engineer end", log_uid)
         if isinstance(meta, list):
             for item in meta:
                 url, _ = process_engineer_url(item["url"])
@@ -1026,40 +1026,43 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         yield r
                     if item is not None:
                         messages.append(item)
-                        result, meta = call_function(
-                            log_uid,
-                            item["tool_calls"][0]["function"]["name"],
-                            json.loads(
-                                item["tool_calls"][0]["function"]["arguments"]
+                        if item.get("tool_calls") and len(item["tool_calls"]) > 0:
+                            result, meta = call_function(
+                                log_uid,
+                                item["tool_calls"][0]["function"]["name"],
+                                json.loads(
+                                    item["tool_calls"][0]["function"]["arguments"]
+                                )
                             )
-                        )
-                        #logger.debug("(%s) tool output: %s\n%s",
-                        #             log_uid, result[:420], str(meta)[:420])
-                        if meta is not None:
-                            yield llm_pb2.NewMessageResponse(
-                                tool_metadata=meta
-                            )
-                        if isinstance(result, dict) and "role" in result:
-                            # Если результат уже в формате сообщения, добавляем его
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": item["tool_calls"][0]["id"],
-                                "content": "The actual tool output will be provided as next assistant message"
-                            })
-                            result["role"] = "assistant"
-                            messages.append(result)
-                            logger.info(
-                                "(%s) DONE SOME INSANE SHIT!1!!!!!111111",
-                                log_uid)
+                            #logger.debug("(%s) tool output: %s\n%s",
+                            #             log_uid, result[:420], str(meta)[:420])
+                            if meta is not None:
+                                yield llm_pb2.NewMessageResponse(
+                                    tool_metadata=meta
+                                )
+                            if isinstance(result, dict) and "role" in result:
+                                # Если результат уже в формате сообщения, добавляем его
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": item["tool_calls"][0]["id"],
+                                    "content": "The actual tool output will be provided as next assistant message"
+                                })
+                                result["role"] = "assistant"
+                                messages.append(result)
+                                logger.info(
+                                    "(%s) DONE SOME INSANE SHIT!1!!!!!111111",
+                                    log_uid)
+                            else:
+                                messages.append({
+                                    "role": "tool",
+                                    "tool_call_id": item["tool_calls"][0]["id"],
+                                    "content": result
+                                })
+                                logger.info(
+                                    "(%s) NOT DONE FUCKING ANYTHING!1!!!!!111111",
+                                    log_uid)
                         else:
-                            messages.append({
-                                "role": "tool",
-                                "tool_call_id": item["tool_calls"][0]["id"],
-                                "content": result
-                            })
-                            logger.info(
-                                "(%s) NOT DONE FUCKING ANYTHING!1!!!!!111111",
-                                log_uid)
+                            raise ValueError("Tool call data is missing or empty in the response from LLM")
                         summ = 0
                         for message in messages:
                             summ += len(message.get("content", ""))
