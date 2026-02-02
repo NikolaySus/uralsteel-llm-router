@@ -405,8 +405,8 @@ def call_function(log_uid, name, args):
                 )
             )
         else:
-            result = "Tool call successfully aborted."
-            meta = None
+            result = "Tool call aborted."
+            meta = []
         return result, meta
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
