@@ -33,9 +33,9 @@ from auth_interceptor import AuthInterceptor
 from logger import logger
 from util import (
     build_user_message, remote_pdf_to_b64_images, websearch, check_docling_health, convert_to_md,
-    get_messages_wo_b64_images, engineer, sanitize_bucket_name
+    get_messages_wo_b64_images, engineer, process_engineer_url
 )
-
+from minio_util import MINIO_ADDRESS, BUCKET_NAME, MINIO_ACCESS_KEY, MINIO_SECRET_KEY
 
 # Словил кринж с systemd...
 # Фикс для подстановки переменных окружения в другие переменные окружения
@@ -83,11 +83,11 @@ WHITELIST_REGEX_TEXT2TEXT  = os.environ.get('WHITELIST_REGEX_TEXT2TEXT', '.*')
 BLACKLIST_REGEX_TEXT2TEXT  = os.environ.get('BLACKLIST_REGEX_TEXT2TEXT', '$^')
 WHITELIST_REGEX_SPEECH2TEXT= os.environ.get('WHITELIST_REGEX_SPEECH2TEXT', '.*')
 BLACKLIST_REGEX_SPEECH2TEXT= os.environ.get('BLACKLIST_REGEX_SPEECH2TEXT', '$^')
-# S3
-MINIO_ADDRESS = os.environ.get('MINIO_ADDRESS', '')
-BUCKET_NAME = os.environ.get('BUCKET_NAME', 'cache')
-MINIO_ACCESS_KEY = os.environ.get('MINIO_ACCESS_KEY', None)
-MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
+# # S3
+# MINIO_ADDRESS = os.environ.get('MINIO_ADDRESS', '')
+# BUCKET_NAME = os.environ.get('BUCKET_NAME', 'cache')
+# MINIO_ACCESS_KEY = os.environ.get('MINIO_ACCESS_KEY', None)
+# MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
 # Костыль для пустого openai usage
 USAGE_FIX = 3.6
 # Инструменты для моделей с поддержкой функций
@@ -329,41 +329,6 @@ def transcribe_audio(audio_buffer: BytesIO,
     return text, proto
 
 
-def generate_presigned_download_url(bucket_name, file_name, expires_hours=24):
-    """
-    Generate a presigned URL for direct download from MinIO.
-
-    Args:
-        bucket_name: Name of the bucket
-        file_name: Name of the file in the bucket
-        expires_hours: URL validity period in hours
-
-    Returns:
-        Presigned URL as string or None if error occurs
-    """
-    try:
-        # Initialize MinIO client inside the function
-        minio_client = Minio(
-            MINIO_ADDRESS,
-            access_key=MINIO_ACCESS_KEY,
-            secret_key=MINIO_SECRET_KEY,
-            secure=True
-        )
-
-        # Generate presigned URL (valid for specified hours)
-        url = minio_client.presigned_get_object(
-            bucket_name,
-            file_name,
-            expires=timedelta(hours=expires_hours)
-        )
-        return url
-    except S3Error as e:
-        logger.error("Error generating presigned URL: %s", str(e))
-        return None
-    except Exception as e:
-        logger.error("Unexpected error generating presigned URL: %s", str(e))
-        return None
-
 def image_gen(query: str):
     """Генерирует изображение по запросу и возвращает его URL."""
     result = None
@@ -394,34 +359,6 @@ def image_gen(query: str):
         )
     )
 
-def process_engineer_url(url):
-    """
-    Process engineer URL to extract bucket name and file name,
-    then generate presigned download URL with .pdf extension.
-
-    Args:
-        url: Original URL in format "bucket_name/path/to/file.ext"
-
-    Returns:
-        Processed URL with presigned download link and .pdf extension
-    """
-    if not url or "/" not in url:
-        return url
-
-    # Split URL into bucket_name and file_path
-    bucket_name, file_path = url.split("/", 1)
-
-    bucket_name = sanitize_bucket_name(bucket_name)
-
-    # Replace any file extension with .pdf
-    if "." in file_path:
-        file_path = file_path.rsplit(".", 1)[0] + ".pdf"
-
-    # Generate presigned download URL
-    presigned_url = generate_presigned_download_url(bucket_name, file_path)
-
-    return presigned_url if presigned_url else url
-
 
 def call_function(log_uid, name, args):
     """Вызов функции инструмента по имени с аргументами args."""
@@ -449,7 +386,7 @@ def call_function(log_uid, name, args):
         meta_proc = []
         if isinstance(meta, list):
             for item in meta:
-                url = process_engineer_url(item["url"])
+                url, _ = process_engineer_url(item["url"])
                 title=item["title"]
                 result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + "\n".join(
                     [f"## PAGE {i+1}\n\n![page {i+1}]({u})\n\n"

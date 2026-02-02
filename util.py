@@ -26,6 +26,8 @@ except ImportError:
 
 from logger import logger
 
+from minio_util import generate_presigned_download_url
+
 
 def get_messages_wo_b64_images(messages):
     """Removes all base64-encoded images from messages.
@@ -301,6 +303,35 @@ def engineer(query: str, base_url: str):
         logger.error(f"Ошибка при выполнении запроса к RAG-сервису: {e}")
         # Возвращаем пустые значения в случае ошибки
         return []
+
+
+def process_engineer_url(url):
+    """
+    Process engineer URL to extract bucket name and file name,
+    then generate presigned download URL with .pdf extension.
+
+    Args:
+        url: Original URL in format "bucket_name/path/to/file.ext"
+
+    Returns:
+        Processed URL with presigned download link and .pdf extension
+    """
+    if not url or "/" not in url:
+        return url
+
+    # Split URL into bucket_name and file_path
+    bucket_name, file_path = url.split("/", 1)
+
+    bucket_name = sanitize_bucket_name(bucket_name)
+
+    # Replace any file extension with .pdf
+    if "." in file_path:
+        file_path = file_path.rsplit(".", 1)[0] + ".pdf"
+
+    # Generate presigned download URL
+    presigned_url = generate_presigned_download_url(bucket_name, file_path)
+
+    return presigned_url if presigned_url else url, file_path
 
 
 def websearch(query: str, tavily_base_url: str):
