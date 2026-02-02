@@ -23,6 +23,10 @@ from openai import OpenAI
 from minio import Minio
 from minio.error import S3Error
 
+from grpc_health.v1 import health
+from grpc_health.v1 import health_pb2
+from grpc_health.v1 import health_pb2_grpc
+
 import llm_pb2
 import llm_pb2_grpc
 from auth_interceptor import AuthInterceptor
@@ -1057,6 +1061,15 @@ def serve():
     llm_pb2_grpc.add_LlmServicer_to_server(
         LlmServicer(), server
     )
+    
+    # Добавляем health check сервис
+    health_servicer = health.HealthServicer()
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    
+    # Устанавливаем статус сервиса как HEALTHY (SERVING)
+    health_servicer.set('', health_pb2.HealthCheckResponse.SERVING)  # Empty string for overall health
+    health_servicer.set('llm.Llm', health_pb2.HealthCheckResponse.SERVING)
+    
     server.add_secure_port("[::]:50051", server_creds)
     server.start()
     server.wait_for_termination()
