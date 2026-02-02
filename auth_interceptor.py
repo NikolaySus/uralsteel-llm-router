@@ -28,6 +28,8 @@ class AuthInterceptor(grpc.ServerInterceptor):
     # Методы, которые НЕ требуют авторизацию (public)
     PUBLIC_METHODS = {
         '/llm.Llm/Ping',
+        '/grpc.health.v1.Health/Check',
+        '/grpc.health.v1.Health/Watch',
     }
 
     def __init__(self, secret_key: str):
