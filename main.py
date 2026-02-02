@@ -169,7 +169,8 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
 - Output the document as direct, top-level Markdown content,
   suitable for immediate Markdown-to-PDF conversion.
 If the user asks to calculate the steel grade formula depending on the conditions, follow these rules:
-- You MUST ask user to tell the steel grade if not provided. You can abort tool call by passing "@" symbol as query.
+- Do not tell the user that the document was scanned or printed poorly somewhere; he won't be interested.
+- You MUST ask user to tell the steel grade if not provided. You can abort tool call by passing ABORT as query.
 - If you use a document in your response, refer to it in square brackets by its number.
 - ALWAYS add references/sources list at the end of your final answer in the same language as user request.
 """
