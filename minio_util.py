@@ -46,8 +46,8 @@ def generate_presigned_download_url(bucket_name, file_name, expires_hours=24):
         )
         return url
     except S3Error as e:
-        logger.error("Error generating presigned URL: %s", str(e))
+        # logger.error("Error generating presigned URL: %s", str(e))
         return None
     except Exception as e:
-        logger.error("Unexpected error generating presigned URL: %s", str(e))
+        # logger.error("Unexpected error generating presigned URL: %s", str(e))
         return None
