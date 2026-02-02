@@ -273,9 +273,14 @@ def engineer(query: str, base_url: str):
         data = response.json()
 
         # Извлекаем текст ответа
-        response_text = data.get("response", "")
-        response_text = response_text.split("### References")[1]
-        check = proc_ref_list(response_text)
+        response_text = data.get("response", "") or ""
+        # В ответе может не быть разделителя "### References" — тогда работаем с
+        # полной строкой без падения по IndexError
+        if "### References" in response_text:
+            _, references_block = response_text.split("### References", 1)
+        else:
+            references_block = response_text
+        check = proc_ref_list(references_block)
 
         # Обрабатываем ссылки
         references = []
