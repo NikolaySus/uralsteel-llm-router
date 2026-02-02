@@ -295,7 +295,7 @@ def engineer(query: str, base_url: str):
                 url_path = file_path  # Если паттерн не найден, используем как есть
 
             title = ref.get("reference_id", "")
-            if title in check:
+            if title in check or not check:
                 references.append({
                     "title": title,
                     "url": url_path
