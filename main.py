@@ -169,8 +169,9 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
 - Output the document as direct, top-level Markdown content,
   suitable for immediate Markdown-to-PDF conversion.
 If the user asks to calculate the steel grade formula depending on the conditions, follow these rules:
-- You MUST ask user to tell the steel grade and conditions.
-- ALWAYS add references list at the end of your final answer.
+- You MUST ask user to tell the steel grade if not provided. You can abort tool call by passing "@" symbol as query.
+- If you use a document in your response, refer to it in square brackets by its number.
+- ALWAYS add references/sources list at the end of your final answer in the same language as user request.
 """
 # If the user asks to do something that requires the following tools:
 # """
@@ -445,22 +446,24 @@ def call_function(log_uid, name, args):
                 url = process_engineer_url(item["url"])
                 title=item["title"]
                 result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + "\n".join(
-                    [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
+                    [f"## PAGE {i+1}\n\n![page {i+1}]({u})\n\n"
                      for i, u
                      in enumerate(remote_pdf_to_b64_images(url))])
                 meta_proc.append(llm_pb2.ToolWebSearchMetadataItem(
                         url=url,
                         title=title
                     ))
-
-        meta = llm_pb2.ToolMetadataResponse(
-            websearch=llm_pb2.ToolWebSearchMetadata(
-                item=meta_proc
+            result, _ = build_user_message("THIS IS TOOL CALL OUTPUT",
+                                           {"CONCATENATION OF REFERENCE DOCUMENTS":result}, [],
+                                           IMGHDR_TO_MIME)
+            meta = llm_pb2.ToolMetadataResponse(
+                websearch=llm_pb2.ToolWebSearchMetadata(
+                    item=meta_proc
+                )
             )
-        )
-        result, _ = build_user_message("THIS IS TOOL CALL OUTPUT",
-                                       {"CONCATENATION OF REFERENCE DOCUMENTS":result}, [],
-                                       IMGHDR_TO_MIME)
+        else:
+            result = "Tool call successfully aborted."
+            meta = None
         return result, meta
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 

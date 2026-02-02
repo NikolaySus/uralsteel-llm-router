@@ -233,6 +233,8 @@ def engineer(query: str, base_url: str):
         - response_text: Текст ответа из поля "response"
         - references: Список словарей с полями "title" и "url" для ссылок
     """
+    if query == "@":
+        return 0
     # Постоянный user_prompt, не зависящий от аргументов
     USER_PROMPT = "Необходимо извлечь все данные по марке стали для выбора химического состава сплава и технологии обработки в зависимости от запроса пользователя"
 
@@ -298,7 +300,7 @@ def engineer(query: str, base_url: str):
     except requests.exceptions.RequestException as e:
         logger.error(f"Ошибка при выполнении запроса к RAG-сервису: {e}")
         # Возвращаем пустые значения в случае ошибки
-        return "", []
+        return []
 
 
 def websearch(query: str, tavily_base_url: str):
