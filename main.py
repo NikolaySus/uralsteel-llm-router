@@ -177,6 +177,7 @@ If the user asks to calculate the steel grade formula depending on the condition
 - You MUST ask user to tell the steel grade if not provided. You can abort tool call by passing ABORT as query.
 - If you use a document in your response, refer to it in square brackets by its number.
 - ALWAYS add references/sources list at the end of your final answer in the same language as user request.
+- You MUST provide calculations of the values ​​of coefficients/equivalents that are used in the process of solving the problem.
 """
 # If the user asks to do something that requires the following tools:
 # """
