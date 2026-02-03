@@ -993,6 +993,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             tools = tools_whitelist_by_model(model_to_use)
             # Определяем инструмент функции
             if function_tool is None or not function_tool:
+                logger.info("(%s) AUTOTOOL: %s", log_uid, str(api_to_use.get("autotool")))
                 function_tool = "auto" if api_to_use.get("autotool") else "none" # "auto"  # "none"  # пока без "auto" живём, надо тестить
                 if not tools:
                     function_tool = "none"
