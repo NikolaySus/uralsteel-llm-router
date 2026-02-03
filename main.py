@@ -66,6 +66,7 @@ for name, value in os.environ.items():
         elif case == "tools":
             ALL_API_VARS[api][case] = json.loads(value)
         elif case == "autotool":
+            print(f"!!!!!!!!{api}|{case}|{value}")
             ALL_API_VARS[api][case] = bool(value)
         elif case == "sysprompt":
             ALL_API_VARS[api][case] = value.replace('\\n', '\n')
