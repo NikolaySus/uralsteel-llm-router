@@ -5,7 +5,7 @@ uv run -m grpc_tools.protoc -I.\uralsteel-grpc-api\llm\ --python_out=.
 --grpc_python_out=. llm.proto
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 from concurrent import futures
 from io import BytesIO
@@ -58,9 +58,17 @@ for name, value in os.environ.items():
         ALL_API_VARS.setdefault(api, dict())
         ALL_API_VARS[api][case] = value
         if case == "model":
-            MODEL_TO_API[value] = api
+            rename = ALL_API_VARS[api].get("rename")
+            if rename is not None:
+                MODEL_TO_API[rename] = api
+            else:
+                MODEL_TO_API[value] = api
         elif case == "tools":
             ALL_API_VARS[api][case] = json.loads(value)
+        elif case == "autotool":
+            ALL_API_VARS[api][case] = bool(value)
+        elif case == "sysprompt":
+            ALL_API_VARS[api][case] = value.replace('\\n', '\n')
 # Секретный ключ для клиентского доступа к gRPC методам
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
 # Формат даты и времени
@@ -475,7 +483,7 @@ def generate_chat_name(log_uid: str, user_message: str):
 
 
 def build_messages_from_history(history, user_message: str,
-                                text2text_override: str = None):
+                                text2text_override: str = None, log_uid: str = ""):
     """Собирает список сообщений для LLM на основании history и user_message.
     
     Использует text2text_override если задан, иначе
@@ -485,9 +493,11 @@ def build_messages_from_history(history, user_message: str,
         model_to_use = text2text_override
     else:
         model_to_use = ALL_API_VARS["yandexai"]["model"]
-    messages = [{
-        "role": "system",
-        "content": (
+    sysprompt = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("sysprompt")
+    logger.info("(%s) searching custom system prompt...", log_uid)
+    if sysprompt is None:
+        logger.info("(%s) system prompt not set, using default.", log_uid)
+        sysprompt = (
             "### You are *helpfull* and *highly skilled* LLM-powered "
             "assistant that always follows best practices.\n"
             f"The base LLM is **{model_to_use}**. Current date and time: "
@@ -498,9 +508,10 @@ def build_messages_from_history(history, user_message: str,
             "retrieval and **image_gen** for image generation. "
             "**Do not insert any links or images in your answers. Respond in "
             "the same language as the user using MarkDown markup language. "
-            "If tool output is provided, ALWAYS base your answer on it.**\n" +
-            TYPICAL_SITUATIONS_SOLVING_PROMPT + RESTRICTIONS
-        )
+            "If tool output is provided, ALWAYS base your answer on it.**\n")
+    messages = [{
+        "role": "system",
+        "content": sysprompt + TYPICAL_SITUATIONS_SOLVING_PROMPT + RESTRICTIONS
     }]
     vlm2 = False
     if history:
@@ -706,10 +717,8 @@ def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):
         return None, None
 
 
-
 def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
-                              api_to_use, key_to_use, dir_to_use,
-                              model_to_use, summ, sumr):
+                              api_to_use, summ, sumr):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
@@ -723,14 +732,14 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
         - item: объект вызова функции или None
     """
     logger.info("(%s) model_to_use is set to %s, tool_choice is set to %s",
-          log_uid, model_to_use or '-', tool_choice or '-')
+                log_uid, api_to_use["model"], tool_choice or '-')
     if tool_choice != "none":
         response = OpenAI(
-            base_url=api_to_use,
-            api_key=key_to_use,
-            project=dir_to_use,
+            base_url=api_to_use["base_url"],
+            api_key=api_to_use["key"],
+            project=api_to_use.get("folder"),
         ).chat.completions.create(
-            model=model_to_use,
+            model=api_to_use["model"],
             messages=messages,
             stream=True,
             stream_options={"include_usage": True},
@@ -739,11 +748,11 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
         )
     else:
         response = OpenAI(
-            base_url=api_to_use,
-            api_key=key_to_use,
-            project=dir_to_use,
+            base_url=api_to_use["base_url"],
+            api_key=api_to_use["key"],
+            project=api_to_use.get("folder"),
         ).chat.completions.create(
-            model=model_to_use,
+            model=api_to_use["model"],
             messages=messages,
             stream=True,
             stream_options={"include_usage": True},
@@ -784,6 +793,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             t.append(ALL_API_VARS["openaivlm"]["model"])
             t.append(ALL_API_VARS["deepseek"]["model"])
             t.append(ALL_API_VARS["openaimini"]["model"])
+            t.append(ALL_API_VARS["openaiengineer"]["rename"])
             return llm_pb2.StringsListResponse(strings=t)
         except Exception as e:
             logger.error("Getting text2text models: %s", e)
@@ -951,7 +961,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
 
             # Сборка контекста
             messages, vlm2 = build_messages_from_history(history, user_message,
-                                                         text2text_override)
+                                                         text2text_override,
+                                                         log_uid)
 
             # Определяем модель и нужно ли предупреждение об игноре картинок
             if text2text_override:
@@ -967,25 +978,22 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 model_to_use = ALL_API_VARS["openaivlm"]["model"]
             else:
                 model_to_use = ALL_API_VARS["yandexai"]["model"]
-            api_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["base_url"]
-            key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
-            dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
+            api_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]
             # Получаем информацию о цене (может быть float или dict с 'input'/'output')
-            api_name = MODEL_TO_API[model_to_use]
-            if "price_coef_input" in ALL_API_VARS[api_name]:
+            if "price_coef_input" in api_to_use:
                 # Модель с разделением на входные и выходные токены
                 price_info = {
-                    "input": ALL_API_VARS[api_name]["price_coef_input"],
-                    "output": ALL_API_VARS[api_name]["price_coef_output"]
+                    "input": api_to_use["price_coef_input"],
+                    "output": api_to_use["price_coef_output"]
                 }
             else:
                 # Модель с единой ценой
-                price_info = ALL_API_VARS[api_name]["price_coef"]
+                price_info = api_to_use["price_coef"]
 
             tools = tools_whitelist_by_model(model_to_use)
             # Определяем инструмент функции
             if function_tool is None or not function_tool:
-                function_tool = "auto"  # "none"  # пока без "auto" живём, надо тестить
+                function_tool = "auto" if api_to_use.get("autotool") else "none" # "auto"  # "none"  # пока без "auto" живём, надо тестить
                 if not tools:
                     function_tool = "none"
             elif function_tool in tools:
@@ -1017,7 +1025,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     try:
                         for r, i, d in proc_llm_stream_responses(
                             price_info, log_uid, messages, function_tool, api_to_use,
-                            key_to_use, dir_to_use, model_to_use, summ, sumr
+                            summ, sumr
                         ):
                             try:
                                 if d is not None:
@@ -1111,8 +1119,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         sumr = 0
                         try:
                             for r, i, d in proc_llm_stream_responses(
-                                price_info, log_uid, messages, "none", api_to_use, key_to_use,
-                                dir_to_use, model_to_use, summ, sumr
+                                price_info, log_uid, messages, "none", api_to_use,
+                                summ, sumr
                             ):
                                 try:
                                     if d is not None:
@@ -1285,17 +1293,35 @@ if __name__ == "__main__":
             config = json.load(f)
         if 'generated_at' not in config or not config['generated_at']:
             raise ValueError("Invalid config: missing 'generated_at'")
-        for name, coef in config.get("prices_coefs", {}).items():
-            if isinstance(coef, dict):
+
+        models_cfg = config.get("models")
+        if not isinstance(models_cfg, dict) or not models_cfg:
+            raise ValueError("Invalid config: missing 'models'")
+
+        for api_name, model_cfg in models_cfg.items():
+            if not isinstance(model_cfg, dict):
+                logger.warning("Skip model %s: config is not a dict", api_name)
+                continue
+            price_cfg = model_cfg.get("price_coefs")
+            if price_cfg is None:
+                logger.warning("Skip model %s: 'price_coefs' is missing", api_name)
+                continue
+            if api_name not in ALL_API_VARS:
+                logger.warning("Skip model %s: not found in ALL_API_VARS", api_name)
+                continue
+
+            if isinstance(price_cfg, dict):
                 # Модели с разделением на входные и выходные токены
-                ALL_API_VARS[name]["price_coef_input"] = coef.get("input", 0)
-                ALL_API_VARS[name]["price_coef_output"] = coef.get("output", 0)
+                ALL_API_VARS[api_name]["price_coef_input"] = price_cfg.get("input", 0)
+                ALL_API_VARS[api_name]["price_coef_output"] = price_cfg.get("output", 0)
                 logger.info("Price coefficient for %s: input=%.10f, output=%.10f",
-                           name, coef.get("input", 0), coef.get("output", 0))
+                            api_name,
+                            price_cfg.get("input", 0),
+                            price_cfg.get("output", 0))
             else:
                 # Модели с единой ценой
-                ALL_API_VARS[name]["price_coef"] = coef
-                logger.info("Price coefficient for %s: %s", name, coef)
+                ALL_API_VARS[api_name]["price_coef"] = price_cfg
+                logger.info("Price coefficient for %s: %s", api_name, price_cfg)
     except Exception as e:
         logger.error("Invalid config: %s", e)
         exit(1)
@@ -1319,6 +1345,8 @@ if __name__ == "__main__":
     update_model_to_api([ALL_API_VARS["deepseek"]["model"]], "deepseek")
     check_arr.append(ALL_API_VARS["openaimini"]["model"])
     update_model_to_api([ALL_API_VARS["openaimini"]["model"]], "openaimini")
+    check_arr.append(ALL_API_VARS["openaiengineer"]["rename"])
+    update_model_to_api([ALL_API_VARS["openaiengineer"]["rename"]], "openaiengineer")
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,
