@@ -63,6 +63,8 @@ for name, value in os.environ.items():
                 MODEL_TO_API[rename] = api
             else:
                 MODEL_TO_API[value] = api
+        if case == "rename":
+            MODEL_TO_API[value] = api
         elif case == "tools":
             ALL_API_VARS[api][case] = json.loads(value)
         elif case == "autotool":
@@ -183,7 +185,7 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
 If the user asks to calculate the steel grade formula depending on the conditions, follow these rules:
 - Do not tell the user that the document was scanned or printed poorly somewhere; he won't be interested.
 - If you use a document in your response, refer to it in square brackets by its number.
-- ALWAYS add references/sources list at the end of your final answer in the same language as user request.
+- ALWAYS include a list of sources at the end of your final answer in the same language as the user's query, indicating that these are the actual documents needed.
 - You MUST provide calculations of the values ​​of coefficients/equivalents that are used in the process of solving the problem.
 """
 # If the user asks to do something that requires the following tools:
