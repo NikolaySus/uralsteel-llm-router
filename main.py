@@ -185,7 +185,7 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
 If the user asks to calculate the steel grade formula depending on the conditions, follow these rules:
 - Do not tell the user that the document was scanned or printed poorly somewhere; he won't be interested.
 - If you use a document in your response, refer to it in square brackets by its number.
-- If you find an empty cell in the table, this means that it inherits the value from the cell above and you MUST take the value from there. It is NOT possible for a cell value to be unregulated, except in cases where a dash is EXPLICITLY indicated. Values ​​can even be dictated by another table above, and you MUST check for this.
+- If you find an empty cell in the table, this means that it inherits the value from the cell above and you MUST take the value from there. It is NOT possible for a cell value to be unregulated, except in cases where a dash is EXPLICITLY indicated. Values ​​can even be dictated by another table above, and you MUST check for this. Think logically, if there are restrictions on the value, then these restrictions also exist on the target value, for example.
 - ALWAYS include a list of sources at the end of your final answer in the same language as the user's query, indicating that these are the actual documents needed.
 - You MUST provide calculations of the values ​​of coefficients/equivalents that are used in the process of solving the problem.
 """
