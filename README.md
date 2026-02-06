@@ -13,6 +13,11 @@
 [AUTHORIZATION.md](./AUTHORIZATION.md)
 
 ### Деплой на сервере
+Перейти в:
+```
+cd /root/
+```
+Затем:
 ```bash
 wget -O - https://raw.githubusercontent.com/NikolaySus/uralsteel-llm-router/main/deploy.sh | sudo bash
 source $HOME/.local/bin/env
@@ -21,7 +26,42 @@ uv run python -m playwright install
 uv run python -m playwright install-deps
 ```
 Затем скачать `.env` файл с переменными среды и комментариями с инструкцией по созданию сертификата безопасности, выполнить инструкцию и произвести запуск. Файл `.env` предоставляется посредством защищённого канала передачи информации (лс в тг).
-### Запуск
+Затем:
+```
+mkdir docling-serve-cpu
+cd docling-serve-cpu
+touch docker-compose.yaml
+```
+Вставить туда:
+```
+services:
+  docling-serve:
+    image: ghcr.io/docling-project/docling-serve-cpu:v1.9.0
+    container_name: docling-serve-cpu
+    ports:
+      - "5001:5001"
+    restart: unless-stopped
+```
+Затем:
+```
+cd /root/
+git clone https://github.com/vakovalskii/searxng-docker-tavily-adapter.git
+cd searxng-docker-tavily-adapter
+
+cp config.example.yaml config.yaml
+```
+Поменять там на:
+```
+user_agent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/129.0.0.0 Safari/537.36"
+```
+Затем:
+```
+docker compose up -d
+curl -X POST "http://localhost:8000/search" \
+     -H "Content-Type: application/json" \
+     -d '{"query": "цена bitcoin", "max_results": 3}'
+```
+### Тестовый запуск
 ```bash
 cd ~/uralsteel-llm-router/
 uv run --env-file .env main.py
