@@ -42,6 +42,10 @@ services:
       - "5001:5001"
     restart: unless-stopped
 ```
+И запустить:
+```
+docker compose up -d
+```
 Затем:
 ```
 cd /root/
