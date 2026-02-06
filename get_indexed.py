@@ -103,6 +103,8 @@ headers = {
     "accept": "application/json",
 }
 
+counter = 0
+
 try:
     # Выполняем POST-запрос
     response = requests.get(url, headers=headers)
@@ -122,10 +124,13 @@ for url_now in file_paths:
     if "hierarchy_trailing_20260126_182731" in url_now:
         url_now = url_now.split("hierarchy_trailing_20260126_182731", 1)[1]
         url_now = "hierarchy_trailing_20260126_182731" + url_now
-    url_now, path = process_engineer_url(url_now)
-    # Usage with retry
     try:
-        file_path = save_dir + path
-        download_to_path_with_retry(url_now, file_path, max_retries=3)
-    except Exception as e:
-        print(f"Download failed: {e}")
+        url_now, path = process_engineer_url(url_now)
+        try:
+            file_path = save_dir + path
+            download_to_path_with_retry(url_now, file_path, max_retries=3)
+        except Exception as e:
+            print(f"Download failed: {e}")
+    except:
+        counter += 1
+print("Failed {counter} docs!")
