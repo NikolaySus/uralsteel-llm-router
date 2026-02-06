@@ -133,4 +133,4 @@ for url_now in file_paths:
             print(f"Download failed: {e}")
     except:
         counter += 1
-print("Failed {counter} docs!")
+print(f"Failed {counter} docs!")
