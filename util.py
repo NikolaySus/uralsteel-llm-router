@@ -304,7 +304,7 @@ def engineer(query: str, base_url: str):
         return references
 
     except requests.exceptions.RequestException as e:
-        logger.error(f"Ошибка при выполнении запроса к RAG-сервису: {e}")
+        logger.error("Request RAG fail: %s", str(e))
         # Возвращаем пустые значения в случае ошибки
         return []
 
@@ -321,6 +321,10 @@ def process_engineer_url(url):
         Processed URL with presigned download link and .pdf extension
     """
     if not url or "/" not in url:
+        try:
+            logger.error("Error getting direct url for %s", url)
+        except:
+            print("Error getting direct url for %s", url)
         return url
 
     # Split URL into bucket_name and file_path
