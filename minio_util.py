@@ -18,7 +18,7 @@ BUCKET_NAME = os.environ.get('BUCKET_NAME', 'cache')
 MINIO_ACCESS_KEY = os.environ.get('MINIO_ACCESS_KEY', None)
 MINIO_SECRET_KEY = os.environ.get('MINIO_SECRET_KEY', None)
 
-def generate_presigned_download_url(bucket_name, file_name, expires_hours=24):
+def generate_presigned_download_url(bucket_name, file_name, expires_hours=72):
     """
     Generate a presigned URL for direct download from MinIO.
 
