@@ -182,12 +182,6 @@ TYPICAL_SITUATIONS_SOLVING_PROMPT = (
   inline code, or quoted blocks.
 - Output the document as direct, top-level Markdown content,
   suitable for immediate Markdown-to-PDF conversion.
-If the user asks to calculate the steel grade formula depending on the conditions, follow these rules:
-- Do not tell the user that the document was scanned or printed poorly somewhere; he won't be interested.
-- If you use a document in your response, refer to it in square brackets by its number.
-- If you find an empty cell in the table, this means that it inherits the value from the cell above and you MUST take the value from there. It is NOT possible for a cell value to be unregulated, except in cases where a dash is EXPLICITLY indicated. Values ​​can even be dictated by another table above, and you MUST check for this. If you decide not to use nearby values, you MUST still provide them and explain why you are not using them, so the user can understand that you didn't miss them. For example, there can be restrictions on the value in upper part of the table, and the user might wonder if those restrictions also exist on the target value, so you provide those restrictions even if they don't apply to the target value because the user might think you didn't see them.
-- ALWAYS include a list of sources at the end of your final answer in the same language as the user's query, indicating that these are the actual documents needed.
-- You MUST provide calculations of the values ​​of coefficients/equivalents that are used in the process of solving the problem.
 """
 # If the user asks to do something that requires the following tools:
 # """
