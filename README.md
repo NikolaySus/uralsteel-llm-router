@@ -7,7 +7,8 @@
 
 Вам нужны:
 1. `ca.crt` - SSL сертификат из этого репозитория
-2. `SECRET_KEY` - Секретный ключ доступа (например, из `.env` файла)
+2. `.env` - Файл переменных окружения (в том числе и с SECRET_KEY)
+3. `config.json` - Файл настроек учёта цен генерации ответов
 
 **Документация по авторизации:**
 [AUTHORIZATION.md](./AUTHORIZATION.md)
@@ -251,4 +252,10 @@ sudo systemctl restart uralsteel-llm-router
 
 # Отключить автозапуск при загрузке
 sudo systemctl disable uralsteel-llm-router
+```
+
+### Вывод логов сервиса
+```bash
+# Где указать количество последних записей для просмотра как -n 20
+sudo journalctl --unit=uralsteel-llm-router.service -n 20 --no-pager
 ```
