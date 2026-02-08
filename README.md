@@ -1,9 +1,9 @@
 # uralsteel-llm-router
 ## Сервис-роутер для взаимодействия с ML моделями.
 ### Клиентским сервисам
-Сервис имеет публичные и защищённые методы:
-- **Ping** - публичный метод (без авторизации) для health-check
-- **NewMessage, AvailableModelsText2Text, AvailableModelsSpeech2Text** - защищённые методы (требуют SECRET_KEY)
+Сервис имеет публичные и защищённые методы (см. подробнее ниже):
+- **Ping** — публичный (без авторизации) health-check
+- **NewMessage, Transcribe, AvailableModelsText2Text, AvailableModelsSpeech2Text, AvailableTools** — защищённые (требуют SECRET_KEY)
 
 Вам нужны:
 1. `ca.crt` - SSL сертификат из этого репозитория
@@ -11,6 +11,75 @@
 
 **Документация по авторизации:**
 [AUTHORIZATION.md](./AUTHORIZATION.md)
+
+### RPC методы (I/O, внешние вызовы, ошибки)
+
+> Формальные структуры сообщений см. в `uralsteel-grpc-api/llm/llm.proto`.
+
+**Ping (public)**
+- **Запрос:** `google.protobuf.Empty`
+- **Ответ:** `google.protobuf.Empty`
+- **Назначение:** health-check сервиса
+- **Ошибки:** не генерирует ошибок авторизации, остальные — стандартные gRPC
+
+**AvailableModelsText2Text (protected)**
+- **Запрос:** `google.protobuf.Empty`
+- **Ответ:** `StringsListResponse` — список моделей text2text
+- **Обращения вовне:**
+  - Yandex GPT (OpenAI‑совместимый endpoint) — получение списка моделей с фильтрацией по `WHITELIST_REGEX_TEXT2TEXT` / `BLACKLIST_REGEX_TEXT2TEXT`
+  - Добавляются модели из env: `openaivlm.model`, `deepseek.model`, `openaimini.model`
+- **Ошибки:** при ошибке запроса/фильтрации — `INTERNAL`, пустой список
+
+**AvailableModelsSpeech2Text (protected)**
+- **Запрос:** `google.protobuf.Empty`
+- **Ответ:** `StringsListResponse` — список моделей speech2text
+- **Обращения вовне:** OpenAI Speech-to-Text (Whisper или аналог) через `INFERENCE_API_openai_*`
+- **Ошибки:** при ошибке запроса — `INTERNAL`, пустой список
+
+**AvailableTools (protected)**
+- **Запрос:** `google.protobuf.Empty`
+- **Ответ:** `StringsListResponse` — названия доступных инструментов (сейчас `websearch`, `image_gen`)
+- **Используются инструменты в `NewMessage` при function-calling**
+
+**Transcribe (protected, streaming request → single response)**
+- **Запрос (stream `TranscribeRequest`):**
+  - `mp3_chunk` — байты mp3 чанка (обязательно хотя бы один)
+  - `speech2text_model` — опционально, переопределяет модель; иначе берётся `INFERENCE_API_openai_model`
+- **Ответ (одиночный `TranscribeResponse`):** `TranscribeResponseType` с полями `transcription`, `duration`, `expected_cost_usd`, `datetime`
+- **Обращения вовне:** OpenAI Audio Transcriptions (`base_url`/`key` из `INFERENCE_API_openai_*`)
+- **Ошибки:** отсутствие аудио чанков или ошибка инференса → `INTERNAL`, в ответе пустая транскрипция и нулевые поля
+
+**NewMessage (protected, single request → streaming response)**
+- **Запрос (`NewMessageRequest`):**
+  - `msg` — текст сообщения **(обязательно)**
+  - `history` — список `user_message_uid/llm_message_uid` из предыдущего диалога (хранятся в MinIO)
+  - `text2text_model` — опциональный override для text2text модели
+  - `function` — опциональный выбор инструмента (`websearch` или `image_gen`)
+  - `documents_urls` — файлы для контекста; конвертируются через Docling, markdown чанки приходят отдельными ответами
+  - `images_urls` — внешние изображения для контекста; подгружаются и инлайн-ятся в base64
+  - `markdown_urls` — готовые markdown URL с указанием оригинального имени
+- **Ответ (stream `NewMessageResponse`):** в потоке могут приходить
+  - `chat_name` — автоимя чата для первого сообщения (модель `openaimini`)
+  - `markdown_chunk` — чанки md из Docling конвертации (CHUNK_SIZE, по умолчанию 8192)
+  - `user_message_uid` / `llm_message_uid` — идентификаторы сообщений, сохранённых в MinIO (`BUCKET_NAME`)
+  - `generate` — части текста ответа
+  - `complete` — финальная статистика токенов и `expected_cost_usd`
+  - `function_call_*` — события function-calling
+  - `tool_metadata` — метаданные инструмента (websearch urls или image_gen base64+cost)
+- **Обращения вовне:**
+  - LLM инференс по выбранной модели:
+    - по умолчанию `INFERENCE_API_yandexai_model`
+    - если есть картинки → `INFERENCE_API_openaivlm_model`
+    - explicit override `text2text_model`
+  - Docling (`DOCLING_ADDRESS`) для конвертации документов
+  - Tavily (`TAVILY_BASE_URL`) для инструмента `websearch`
+  - OpenAI Images (`INFERENCE_API_openaiimgen_*`) для `image_gen`
+  - MinIO S3 (`MINIO_ADDRESS`, `BUCKET_NAME`) — хранение истории
+- **Особенности:**
+  - Пустой `msg` → ошибка
+  - Если переданы изображения и выбранная модель без VLM — картинки вычищаются, добавляется системное предупреждение
+  - Стоимость рассчитывается по `price_coef` (или `price_coef_input/output`) из `config.json`
+- **Ошибки:** любые ошибки конвертации/инференса → `INTERNAL` с деталями в `context.set_details`, поток завершается
 
 ### Деплой на сервере
 Перейти в:
