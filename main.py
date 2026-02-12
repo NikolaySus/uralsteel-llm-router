@@ -741,7 +741,8 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
             stream=True,
             stream_options={"include_usage": True},
             tool_choice=tool_choice,
-            tools=TOOLS
+            tools=TOOLS,
+            reasoning_effort=api_to_use.get("reasoning")
         )
     else:
         response = OpenAI(
@@ -753,6 +754,7 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
             messages=messages,
             stream=True,
             stream_options={"include_usage": True},
+            reasoning_effort=api_to_use.get("reasoning")
         )
     try:
         id_ = ""
