@@ -568,6 +568,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
     - .function_call_arguments.done: завершенные аргументы (FunctionCallDone)
     - .output_item.done: завершение вызова функции (FunctionCallComplete)
     """
+    logger.info("(%s) function_call_responses_from_llm_chunk", log_uid)
     if hasattr(chunk, "object") and (
         chunk.object == "chat.completion.chunk" and
         hasattr(chunk, "choices") and chunk.choices):
