@@ -733,7 +733,7 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
                 log_uid, api_to_use["model"], tool_choice or '-')
     
     # Filter TOOLS by model's whitelist
-    allowed_tool_names = tools_whitelist_by_model(api_to_use["model"])
+    allowed_tool_names = tools_whitelist_by_model(api_to_use.get("rename", api_to_use["model"]))
     filtered_tools = [
         tool for tool in TOOLS
         if tool["function"]["name"] in allowed_tool_names
