@@ -731,6 +731,13 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
     """
     logger.info("(%s) model_to_use is set to %s, tool_choice is set to %s",
                 log_uid, api_to_use["model"], tool_choice or '-')
+    
+    # Filter TOOLS by model's whitelist
+    allowed_tool_names = tools_whitelist_by_model(api_to_use["model"])
+    filtered_tools = [
+        tool for tool in TOOLS
+        if tool["function"]["name"] in allowed_tool_names
+    ] if allowed_tool_names else []
     if tool_choice != "none":
         response = OpenAI(
             base_url=api_to_use["base_url"],
@@ -742,7 +749,7 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
             stream=True,
             stream_options={"include_usage": True},
             tool_choice=tool_choice,
-            tools=TOOLS,
+            tools=filtered_tools,
             reasoning_effort=api_to_use.get("reasoning")
         )
     else:
