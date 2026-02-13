@@ -738,6 +738,8 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
         tool for tool in TOOLS
         if tool["function"]["name"] in allowed_tool_names
     ] if allowed_tool_names else []
+    logger.info("(%s) filtered_tools is set to %s",
+                log_uid, str(filtered_tools))
     if tool_choice != "none":
         response = OpenAI(
             base_url=api_to_use["base_url"],
