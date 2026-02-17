@@ -332,6 +332,9 @@ def process_engineer_url(url):
 
     bucket_name = sanitize_bucket_name(bucket_name)
 
+    # Remove @ symbols before file extensions (e.g., "something@.md" -> "something.md")
+    file_path = file_path.replace('@.', '.')
+
     # Replace any file extension with .pdf
     if "." in file_path:
         file_path = file_path.rsplit(".", 1)[0] + ".pdf"
