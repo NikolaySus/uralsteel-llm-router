@@ -1050,10 +1050,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                     item = i
                                 yield r
                             except Exception as e:
-                                logger.error("Stream error [2 - stream iteration]: %s", e)
+                                logger.error("Stream error [2 - stream iteration]: %s", e, exc_info=True)
+                                logger.error("(%s) Failed to process chunk during first stream", log_uid)
                                 raise
                     except Exception as e:
-                        logger.error("Stream error [3 - proc_llm_stream_responses]: %s", e)
+                        logger.error("Stream error [3 - proc_llm_stream_responses]: %s", e, exc_info=True)
+                        logger.error("(%s) Failed during first LLM stream with tool_choice=%s", log_uid, function_tool)
                         raise
                         
                     if item is not None:
@@ -1070,7 +1072,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                             )
                                         )
                                     except (IndexError, KeyError, json.JSONDecodeError) as e:
-                                        logger.error("Stream error [4 - tool call processing]: %s", e)
+                                        logger.error("Stream error [4 - tool call processing]: %s", e, exc_info=True)
                                         logger.error("(%s) tool_calls data: %s", log_uid, str(item.get("tool_calls")))
                                         raise
                                     #logger.debug("(%s) tool output: %s\n%s",
@@ -1093,7 +1095,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                                 "(%s) DONE SOME INSANE SHIT!1!!!!!111111",
                                                 log_uid)
                                         except (IndexError, KeyError) as e:
-                                            logger.error("Stream error [5 - tool message formatting]: %s", e)
+                                            logger.error("Stream error [5 - tool message formatting]: %s", e, exc_info=True)
+                                            logger.error("(%s) Failed to append tool response message. Result type: %s", log_uid, type(result).__name__)
                                             raise
                                     else:
                                         try:
@@ -1106,16 +1109,24 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                                 "(%s) NOT DONE FUCKING ANYTHING!1!!!!!111111",
                                                 log_uid)
                                         except (IndexError, KeyError) as e:
-                                            logger.error("Stream error [6 - tool message formatting]: %s", e)
+                                            logger.error("Stream error [6 - tool message formatting]: %s", e, exc_info=True)
+                                            logger.error("(%s) Failed to append tool response message. Content type: %s", log_uid, type(result).__name__)
                                             raise
                                 else:
                                     raise ValueError("Tool call data is missing or empty in the response from LLM")
                             except (IndexError, KeyError, TypeError) as e:
-                                logger.error("Stream error [7 - tool validation]: %s", e)
+                                logger.error("Stream error [7 - tool validation]: %s", e, exc_info=True)
                                 logger.error("(%s) item data: %s", log_uid, str(item))
                                 raise
                         except Exception as e:
-                            logger.error("Stream error [8 - tool response processing]: %s", e)
+                            logger.error("Stream error [8 - tool response processing]: %s", e, exc_info=True)
+                            logger.error("(%s) Failed processing tool response. Item: %s", log_uid, str(item)[:500])
+                            if item and item.get("tool_calls"):
+                                try:
+                                    tool_name = item["tool_calls"][0]["function"]["name"]
+                                    logger.error("(%s) Tool name: %s", log_uid, tool_name)
+                                except:
+                                    pass
                             raise
                             
                         summ = 0
@@ -1123,7 +1134,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             for message in messages:
                                 summ += len(message.get("content", ""))
                         except Exception as e:
-                            logger.error("Stream error [9 - message content calculation]: %s", e)
+                            logger.error("Stream error [9 - message content calculation]: %s", e, exc_info=True)
+                            logger.error("(%s) Failed to calculate message content sum. Messages count: %d", log_uid, len(messages))
                             raise
                             
                         sumr = 0
@@ -1143,10 +1155,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                         break
                                     yield r
                                 except Exception as e:
-                                    logger.error("Stream error [10 - second stream iteration]: %s", e)
+                                    logger.error("Stream error [10 - second stream iteration]: %s", e, exc_info=True)
+                                    logger.error("(%s) Failed to process chunk during second stream (after tool execution)", log_uid)
                                     raise
                         except Exception as e:
-                            logger.error("Stream error [11 - second proc_llm_stream_responses]: %s", e)
+                            logger.error("Stream error [11 - second proc_llm_stream_responses]: %s", e, exc_info=True)
+                            logger.error("(%s) Failed during second LLM stream (after tool execution). Messages count: %d", log_uid, len(messages))
                             raise
                 except Exception as e:
                     logger.error("Stream error: %s", e)
