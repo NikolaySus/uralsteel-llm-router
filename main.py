@@ -391,16 +391,28 @@ def call_function(log_uid, name, args):
         logger.info("(%s) сalled engineer end", log_uid)
         if isinstance(meta, list):
             for item in meta:
-                url, _ = process_engineer_url(item["url"])
-                title=item["title"]
-                result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + "\n".join(
-                    [f"## PAGE {i+1}\n\n![page {i+1}]({u})\n\n"
-                     for i, u
-                     in enumerate(remote_pdf_to_b64_images(url))])
-                meta_proc.append(llm_pb2.ToolWebSearchMetadataItem(
-                        url=url,
-                        title=title
-                    ))
+                try:
+                    url, _ = process_engineer_url(item["url"])
+                    title=item["title"]
+                    logger.debug("(%s) Processing engineer document: %s from %s", log_uid, title, url)
+                    try:
+                        images = list(remote_pdf_to_b64_images(url))
+                        result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + "\n".join(
+                            [f"## PAGE {i+1}\n\n![page {i+1}]({u})\n\n"
+                             for i, u
+                             in enumerate(images)])
+                    except Exception as pdf_err:
+                        logger.error("(%s) Failed to process PDF images from engineer for '%s' (URL: %s): %s", 
+                                   log_uid, title, url, pdf_err)
+                        result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n'
+                        result += f"*Note: Could not extract images from this document ({str(pdf_err)[:100]})*\n\n"
+                    meta_proc.append(llm_pb2.ToolWebSearchMetadataItem(
+                            url=url,
+                            title=title
+                        ))
+                except Exception as item_err:
+                    logger.error("(%s) Failed to process engineer document item: %s", log_uid, item_err, exc_info=True)
+                    continue
             result, _ = build_user_message("THIS IS TOOL CALL OUTPUT",
                                            {"CONCATENATION OF REFERENCE DOCUMENTS":result}, [],
                                            IMGHDR_TO_MIME)
@@ -1163,7 +1175,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             logger.error("(%s) Failed during second LLM stream (after tool execution). Messages count: %d", log_uid, len(messages))
                             raise
                 except Exception as e:
-                    logger.error("Stream error: %s", e)
+                    # Error already logged by nested handlers with full context
+                    logger.error("Stream error (outer handler): %s", str(e)[:200])
                     context.set_code(grpc.StatusCode.INTERNAL)
                     context.set_details(f"STREAM ERROR: {e}")
             else:
