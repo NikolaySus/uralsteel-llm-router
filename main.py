@@ -752,32 +752,25 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
     ] if allowed_tool_names else []
     logger.info("(%s) filtered_tools is set to %s",
                 log_uid, str(filtered_tools))
+    # Build kwargs, only including reasoning_effort if it's defined
+    create_kwargs = {
+        "model": api_to_use["model"],
+        "messages": messages,
+        "stream": True,
+        "stream_options": {"include_usage": True},
+    }
+    if api_to_use.get("reasoning") is not None:
+        create_kwargs["reasoning_effort"] = api_to_use.get("reasoning")
+    
     if tool_choice != "none":
-        response = OpenAI(
-            base_url=api_to_use["base_url"],
-            api_key=api_to_use["key"],
-            project=api_to_use.get("folder"),
-        ).chat.completions.create(
-            model=api_to_use["model"],
-            messages=messages,
-            stream=True,
-            stream_options={"include_usage": True},
-            tool_choice=tool_choice,
-            tools=filtered_tools,
-            reasoning_effort=api_to_use.get("reasoning")
-        )
-    else:
-        response = OpenAI(
-            base_url=api_to_use["base_url"],
-            api_key=api_to_use["key"],
-            project=api_to_use.get("folder"),
-        ).chat.completions.create(
-            model=api_to_use["model"],
-            messages=messages,
-            stream=True,
-            stream_options={"include_usage": True},
-            reasoning_effort=api_to_use.get("reasoning")
-        )
+        create_kwargs["tool_choice"] = tool_choice
+        create_kwargs["tools"] = filtered_tools
+    
+    response = OpenAI(
+        base_url=api_to_use["base_url"],
+        api_key=api_to_use["key"],
+        project=api_to_use.get("folder"),
+    ).chat.completions.create(**create_kwargs)
     try:
         id_ = ""
         nm_ = ""
