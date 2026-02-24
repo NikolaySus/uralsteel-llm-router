@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "diskcache>=5.6.3",
     "googleapis-common-protos>=1.72.0",
     "grpcio>=1.76.0",
     "grpcio-health-checking>=1.76.0",
