@@ -26,7 +26,7 @@ except ImportError:
 
 from logger import logger
 
-from minio_util import generate_presigned_download_url
+from minio_util import generate_public_download_url
 
 
 def get_messages_wo_b64_images(messages):
@@ -340,7 +340,7 @@ def process_engineer_url(url):
         file_path = file_path.rsplit(".", 1)[0] + ".pdf"
 
     # Generate presigned download URL
-    presigned_url = generate_presigned_download_url(bucket_name, file_path)
+    presigned_url = generate_public_download_url(bucket_name, file_path)
 
     return presigned_url if presigned_url else url, file_path
 
