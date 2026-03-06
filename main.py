@@ -456,7 +456,8 @@ def call_function(log_uid, name, args):
                         # md_string = httpx.get(actual_md_url, follow_redirects=True).text
                         md_string = requests.get(actual_md_url).content.decode('utf-8') 
                         logger.info("(%s) Processing retriever document: %s", log_uid, md_string[:420])
-                        result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + md_string
+                        tmp_str = f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"'
+                        result += tmp_str + ' BEGIN\n' + md_string + tmp_str + ' END\n'
                     except Exception as md_err:
                         logger.error("(%s) Failed to process markdown content from retriever for '%s' (URL: %s): %s",
                                      log_uid, title, url, md_err)
