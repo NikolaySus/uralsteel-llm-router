@@ -155,6 +155,24 @@ TOOLS = [
                 "additionalProperties": False
             }
         }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "retriever",
+            "description": "Retrieve relevant technological documents for determining steel chemistry based on the user's request. The query MUST be the user's request verbatim without modifications.",
+            "strict": True,
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string"
+                    }
+                },
+                "required": ["query"],
+                "additionalProperties": False
+            }
+        }
     }
 ]
 # Имена инструментов
@@ -416,6 +434,39 @@ def call_function(log_uid, name, args):
             result, _ = build_user_message("THIS IS TOOL CALL OUTPUT",
                                            {"CONCATENATION OF REFERENCE DOCUMENTS":result}, [],
                                            IMGHDR_TO_MIME)
+            meta = llm_pb2.ToolMetadataResponse(
+                websearch=llm_pb2.ToolWebSearchMetadata(
+                    item=meta_proc
+                )
+            )
+    elif name == "retriever":
+        meta = engineer(**args, base_url="http://localhost:9622")
+        result = ""
+        meta_proc = []
+        logger.info("(%s) сalled retriever end", log_uid)
+        if isinstance(meta, list):
+            for item in meta:
+                try:
+                    url, _ = process_engineer_url(item["url"])
+                    actual_md_url = url[:-4] + ".md"
+                    title=item["title"]
+                    logger.debug("(%s) Processing retriever document: %s from %s", log_uid, title, url)
+                    try:
+                        md_string = httpx.get(actual_md_url).text
+                        result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + md_string
+                    except Exception as md_err:
+                        logger.error("(%s) Failed to process markdown content from retriever for '%s' (URL: %s): %s",
+                                     log_uid, title, url, md_err)
+                        result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n'
+                        result += f"*Note: Could not retrieve markdown document content ({str(md_err)[:100]})*\n\n"
+                    meta_proc.append(llm_pb2.ToolWebSearchMetadataItem(
+                            url=url,
+                            title=title
+                        ))
+                except Exception as item_err:
+                    logger.error("(%s) Failed to process retriever document item: %s", log_uid, item_err, exc_info=True)
+                    continue
+            result = {"role": "user", "content": "# THIS IS TOOL CALL OUTPUT\n\n" + result}
             meta = llm_pb2.ToolMetadataResponse(
                 websearch=llm_pb2.ToolWebSearchMetadata(
                     item=meta_proc
