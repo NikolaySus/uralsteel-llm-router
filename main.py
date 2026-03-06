@@ -22,6 +22,7 @@ import httpx
 from openai import OpenAI
 from minio import Minio
 from minio.error import S3Error
+import requests
 
 from grpc_health.v1 import health
 from grpc_health.v1 import health_pb2
@@ -452,7 +453,8 @@ def call_function(log_uid, name, args):
                     title=item["title"]
                     logger.debug("(%s) Processing retriever document: %s from %s", log_uid, title, url)
                     try:
-                        md_string = httpx.get(actual_md_url).text
+                        # md_string = httpx.get(actual_md_url, follow_redirects=True).text
+                        md_string = requests.get(actual_md_url).content
                         logger.info("(%s) Processing retriever document: %s", log_uid, md_string[:420])
                         result += f'\n# REFERENCE DOCUMENT [{title}] "{item["url"].split("/", 1)[1].rsplit(".", 1)[0]}"\n' + md_string
                     except Exception as md_err:
