@@ -353,6 +353,12 @@ def generate_chat_name(log_uid: str, user_message: str):
     Использует llm для создания короткого названия (до 1024 токенов).
     Возвращает строку с названием чата или None в случае ошибки.
     """
+    if not user_message or len(user_message.strip()) == 0:
+        return llm_pb2.ChatNameResponseType(name=str(datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)),
+                                            prompt_tokens=0,
+                                            completion_tokens=0,
+                                            total_tokens=0,
+                                            expected_cost_usd=0)
     messages = [
         {
             "role": "system",
@@ -799,8 +805,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             markdown_urls = getattr(request, 'markdown_urls', None)
 
             # Если сообщение пусто, ошибка
-            if not user_message:
-                raise ValueError("Текст сообщения не получен")
+            # if not user_message:
+            #     raise ValueError("Текст сообщения не получен")
 
             # История по умолчанию пуста
             if history is None:
