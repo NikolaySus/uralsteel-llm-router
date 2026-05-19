@@ -57,6 +57,43 @@ for name, value in os.environ.items():
             MODEL_TO_API[value] = api
         elif case == "tools":
             ALL_API_VARS[api][case] = json.loads(value)
+
+TRUE_ENV_VALUES = {"1", "true", "yes", "y", "on"}
+TEXT2TEXT_ENV_APIS = (
+    "openaivlm",
+    "deepseek",
+    "openaimini",
+    "openroutergemini",
+    "openrouterclaude",
+)
+
+
+def is_truthy_env(value: str) -> bool:
+    """Return True for common truthy env values."""
+    return str(value).strip().lower() in TRUE_ENV_VALUES
+
+
+def api_supports_images(api: str) -> bool:
+    """Return whether API config is marked as accepting image inputs."""
+    api_vars = ALL_API_VARS.get(api, {})
+    if "vlm" in api_vars:
+        return is_truthy_env(api_vars["vlm"])
+    return api == "openaivlm"
+
+
+def model_supports_images(model: str) -> bool:
+    """Return whether a configured model can receive image inputs."""
+    return api_supports_images(MODEL_TO_API.get(model, ""))
+
+
+def add_configured_text2text_models(models: list[str]) -> list[str]:
+    """Append configured static text2text models and refresh model routing."""
+    for api in TEXT2TEXT_ENV_APIS:
+        model = ALL_API_VARS.get(api, {}).get("model")
+        if model:
+            models.append(model)
+            update_model_to_api([model], api)
+    return models
 # Секретный ключ для клиентского доступа к gRPC методам
 SECRET_KEY = os.environ.get('SECRET_KEY', '')
 # Формат даты и времени
@@ -723,9 +760,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                          ALL_API_VARS["yandexai"]["folder"],
                                          WHITELIST_REGEX_TEXT2TEXT,
                                          BLACKLIST_REGEX_TEXT2TEXT)
-            t.append(ALL_API_VARS["openaivlm"]["model"])
-            t.append(ALL_API_VARS["deepseek"]["model"])
-            t.append(ALL_API_VARS["openaimini"]["model"])
+            add_configured_text2text_models(t)
             return llm_pb2.StringsListResponse(strings=t)
         except Exception as e:
             logger.error("Getting text2text models: %s", e)
@@ -894,7 +929,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             if text2text_override:
                 model_to_use = text2text_override
                 if ((vlm or vlm2) and
-                    model_to_use != ALL_API_VARS["openaivlm"]["model"]):
+                    not model_supports_images(model_to_use)):
                     get_messages_wo_b64_images(messages)
                     messages.append(NEED_VLM_WARNING)
                     # for msg in change_model_msgs():
@@ -1166,12 +1201,7 @@ if __name__ == "__main__":
                                  WHITELIST_REGEX_TEXT2TEXT,
                                  BLACKLIST_REGEX_TEXT2TEXT)
     update_model_to_api(check_arr, "yandexai")
-    check_arr.append(ALL_API_VARS["openaivlm"]["model"])
-    update_model_to_api([ALL_API_VARS["openaivlm"]["model"]], "openaivlm")
-    check_arr.append(ALL_API_VARS["deepseek"]["model"])
-    update_model_to_api([ALL_API_VARS["deepseek"]["model"]], "deepseek")
-    check_arr.append(ALL_API_VARS["openaimini"]["model"])
-    update_model_to_api([ALL_API_VARS["openaimini"]["model"]], "openaimini")
+    add_configured_text2text_models(check_arr)
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,

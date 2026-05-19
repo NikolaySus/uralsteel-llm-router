@@ -1,4 +1,11 @@
 # uralsteel-llm-router
+
+Image-capable text models are marked in `.env` with
+`INFERENCE_API_<NAME>_VLM=true`. `openaivlm` remains image-capable by default
+for backward compatibility.
+OpenRouter text models use `https://openrouter.ai/api/v1` as `BASE_URL` and
+their OpenRouter model id as `MODEL`, for example
+`google/gemini-3.1-pro-preview`.
 ## Сервис-роутер для взаимодействия с ML моделями.
 ### Клиентским сервисам
 Сервис имеет публичные и защищённые методы (см. подробнее ниже):
