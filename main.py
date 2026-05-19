@@ -384,6 +384,45 @@ def call_function(log_uid, name, args):
     return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
 
 
+def user_message_text(message):
+    """Extract plain text from a user message dict."""
+    content = message.get("content", "")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "\n".join(
+            item.get("text", "")
+            for item in content
+            if isinstance(item, dict) and item.get("type") == "text"
+        )
+    return ""
+
+
+def parse_tool_arguments(log_uid, tool_call, fallback_query=""):
+    """Parse tool-call arguments, tolerating OpenRouter chunks with null args."""
+    function = tool_call.get("function", {})
+    tool_name = function.get("name", "")
+    raw_args = function.get("arguments")
+    if raw_args is None or raw_args == "":
+        logger.warning("(%s) empty tool arguments for %s; using fallback",
+                       log_uid, tool_name)
+        args = {}
+    else:
+        try:
+            args = json.loads(raw_args)
+        except (TypeError, json.JSONDecodeError) as e:
+            logger.error("(%s) invalid tool arguments for %s: %s; raw=%r",
+                         log_uid, tool_name, e, raw_args)
+            args = {}
+    if not isinstance(args, dict):
+        logger.error("(%s) tool arguments for %s are not an object: %r",
+                     log_uid, tool_name, args)
+        args = {}
+    if tool_name in {"websearch", "image_gen"} and not args.get("query"):
+        args["query"] = fallback_query
+    return args
+
+
 def generate_chat_name(log_uid: str, user_message: str):
     """Генерирует название чата на основе сообщения пользователя.
     
@@ -993,12 +1032,16 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         yield r
                     if item is not None:
                         messages.append(item)
+                        tool_call = item["tool_calls"][0]
+                        tool_args = parse_tool_arguments(
+                            log_uid,
+                            tool_call,
+                            user_message_text(user_message)
+                        )
                         result, meta = call_function(
                             log_uid,
-                            item["tool_calls"][0]["function"]["name"],
-                            json.loads(
-                                item["tool_calls"][0]["function"]["arguments"]
-                            )
+                            tool_call["function"]["name"],
+                            tool_args
                         )
                         logger.debug("(%s) tool output: %s\n%s",
                                      log_uid, result[:420], str(meta)[:420])

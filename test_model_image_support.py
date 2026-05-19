@@ -157,6 +157,23 @@ class TestModelImageSupport(unittest.TestCase):
         self.assertEqual(function_args, '{"query":"Moscow news"}')
         self.assertEqual(json.loads(function_args), {"query": "Moscow news"})
 
+    def test_parse_tool_arguments_uses_user_text_fallback(self):
+        tool_call = {
+            "type": "function",
+            "function": {
+                "name": "websearch",
+                "arguments": None,
+            },
+        }
+
+        args = main.parse_tool_arguments(
+            "test",
+            tool_call,
+            "Какая сейчас погода в Алма Ате?",
+        )
+
+        self.assertEqual(args, {"query": "Какая сейчас погода в Алма Ате?"})
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
