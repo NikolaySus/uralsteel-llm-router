@@ -381,7 +381,7 @@ def call_function(log_uid, name, args):
     elif name == "image_gen":
         result, meta = image_gen(**args)
         return result, meta
-    return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False)
+    return json.dumps({"error": f"Unknown tool {name}"}, ensure_ascii=False), None
 
 
 def user_message_text(message):
@@ -421,6 +421,15 @@ def parse_tool_arguments(log_uid, tool_call, fallback_query=""):
     if tool_name in {"websearch", "image_gen"} and not args.get("query"):
         args["query"] = fallback_query
     return args
+
+
+def selected_tool_name(function_tool):
+    """Return forced tool name from tool_choice dict, if present."""
+    if isinstance(function_tool, dict):
+        function = function_tool.get("function", {})
+        if isinstance(function, dict):
+            return function.get("name", "")
+    return ""
 
 
 def generate_chat_name(log_uid: str, user_message: str):
@@ -1033,6 +1042,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     if item is not None:
                         messages.append(item)
                         tool_call = item["tool_calls"][0]
+                        function = tool_call.get("function", {})
+                        if not function.get("name"):
+                            function["name"] = selected_tool_name(function_tool)
                         tool_args = parse_tool_arguments(
                             log_uid,
                             tool_call,

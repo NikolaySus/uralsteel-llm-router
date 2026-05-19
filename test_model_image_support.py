@@ -174,6 +174,20 @@ class TestModelImageSupport(unittest.TestCase):
 
         self.assertEqual(args, {"query": "Какая сейчас погода в Алма Ате?"})
 
+    def test_selected_tool_name_reads_forced_tool_choice(self):
+        function_tool = {
+            "type": "function",
+            "function": {"name": "websearch"},
+        }
+
+        self.assertEqual(main.selected_tool_name(function_tool), "websearch")
+
+    def test_unknown_tool_returns_result_and_no_metadata(self):
+        result, meta = main.call_function("test", None, {})
+
+        self.assertIsNone(meta)
+        self.assertEqual(json.loads(result), {"error": "Unknown tool None"})
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
