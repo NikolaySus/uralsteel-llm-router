@@ -610,7 +610,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                         }
                     ]
                 }, None, None, None
-    return None, None, None, None, None
+    return None, None, id_, nm_, args
 
 
 def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):

@@ -109,6 +109,15 @@ class TestModelImageSupport(unittest.TestCase):
                 )
             ],
         )
+        unrelated_chunk = SimpleNamespace(
+            object="chat.completion.chunk",
+            choices=[
+                SimpleNamespace(
+                    finish_reason=None,
+                    delta=SimpleNamespace(tool_calls=None),
+                )
+            ],
+        )
         done_chunk = SimpleNamespace(
             id="chunk-1",
             object="chat.completion.chunk",
@@ -135,6 +144,9 @@ class TestModelImageSupport(unittest.TestCase):
         )
         _, _, call_id, name, args = main.function_call_responses_from_llm_chunk(
             "test", delta_chunk, call_id, name, args
+        )
+        _, _, call_id, name, args = main.function_call_responses_from_llm_chunk(
+            "test", unrelated_chunk, call_id, name, args
         )
         response, item, _, _, _ = main.function_call_responses_from_llm_chunk(
             "test", done_chunk, call_id, name, args
