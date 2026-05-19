@@ -398,6 +398,19 @@ def user_message_text(message):
     return ""
 
 
+def message_content_length(message):
+    """Return an approximate content length for token cost fallback logic."""
+    content = message.get("content")
+    if content is None:
+        return 0
+    if isinstance(content, str):
+        return len(content)
+    if isinstance(content, list):
+        return sum(len(str(item.get("text", "")))
+                   for item in content if isinstance(item, dict))
+    return len(str(content))
+
+
 def parse_tool_arguments(log_uid, tool_call, fallback_query=""):
     """Parse tool-call arguments, tolerating OpenRouter chunks with null args."""
     function = tool_call.get("function", {})
@@ -1024,7 +1037,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     item = None
                     summ = 0
                     for message in messages:
-                        summ += len(message.get("content", ""))
+                        summ += message_content_length(message)
                     sumr = 0
                     for r, i, d in proc_llm_stream_responses(
                         price_info, log_uid, messages, function_tool, api_to_use,
@@ -1074,7 +1087,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         })
                         summ = 0
                         for message in messages:
-                            summ += len(message.get("content", ""))
+                            summ += message_content_length(message)
                         sumr = 0
                         for r, i, d in proc_llm_stream_responses(
                             price_info, log_uid, messages, "none", api_to_use, key_to_use,

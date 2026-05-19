@@ -193,6 +193,15 @@ class TestModelImageSupport(unittest.TestCase):
 
         self.assertEqual(tool_call["function"]["arguments"], '{"query": "погода"}')
 
+    def test_message_content_length_accepts_tool_call_content_none(self):
+        message = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [],
+        }
+
+        self.assertEqual(main.message_content_length(message), 0)
+
     def test_selected_tool_name_reads_forced_tool_choice(self):
         function_tool = {
             "type": "function",
