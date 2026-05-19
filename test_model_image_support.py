@@ -153,7 +153,7 @@ class TestModelImageSupport(unittest.TestCase):
         )
 
         self.assertTrue(response.HasField("function_call_complete"))
-        self.assertIsNone(item["content"])
+        self.assertEqual(item["content"], "")
         self.assertEqual(item["tool_calls"][0]["id"], "call-1")
         function_args = item["tool_calls"][0]["function"]["arguments"]
         self.assertEqual(function_args, '{"query":"Moscow news"}')
@@ -201,6 +201,37 @@ class TestModelImageSupport(unittest.TestCase):
         }
 
         self.assertEqual(main.message_content_length(message), 0)
+
+    def test_normalize_tool_call_item_fills_provider_required_fields(self):
+        item = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": None,
+                    "type": "function",
+                    "function": {
+                        "name": None,
+                        "arguments": None,
+                    },
+                }
+            ],
+        }
+        function_tool = {
+            "type": "function",
+            "function": {"name": "websearch"},
+        }
+
+        tool_call = main.normalize_tool_call_item(
+            item,
+            function_tool,
+            {"query": "погода"},
+        )
+
+        self.assertEqual(item["content"], "")
+        self.assertTrue(tool_call["id"].startswith("call_"))
+        self.assertEqual(tool_call["function"]["name"], "websearch")
+        self.assertEqual(tool_call["function"]["arguments"], '{"query": "погода"}')
 
     def test_selected_tool_name_reads_forced_tool_choice(self):
         function_tool = {

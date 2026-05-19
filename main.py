@@ -445,6 +445,19 @@ def selected_tool_name(function_tool):
     return ""
 
 
+def normalize_tool_call_item(item, function_tool, tool_args):
+    """Normalize assistant tool-call message for provider compatibility."""
+    item["content"] = item.get("content") or ""
+    tool_call = item["tool_calls"][0]
+    if not tool_call.get("id"):
+        tool_call["id"] = f"call_{uuid.uuid4().hex}"
+    function = tool_call.setdefault("function", {})
+    if not function.get("name"):
+        function["name"] = selected_tool_name(function_tool)
+    function["arguments"] = json.dumps(tool_args, ensure_ascii=False)
+    return tool_call
+
+
 def generate_chat_name(log_uid: str, user_message: str):
     """Генерирует название чата на основе сообщения пользователя.
     
@@ -632,7 +645,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                                 )
                             ), {
                                 "role": "assistant",
-                                "content": None,
+                                "content": "",
                                 "tool_calls": [
                                     {
                                     "id": func_id,
@@ -661,7 +674,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                     )
                 ), {
                     "role": "assistant",
-                    "content": None,
+                    "content": "",
                     "tool_calls": [
                         {
                         "id": id_,
@@ -1055,7 +1068,6 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             item = i
                         yield r
                     if item is not None:
-                        messages.append(item)
                         tool_call = item["tool_calls"][0]
                         function = tool_call.get("function", {})
                         if not function.get("name"):
@@ -1065,10 +1077,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             tool_call,
                             user_message_text(user_message)
                         )
-                        function["arguments"] = json.dumps(
-                            tool_args,
-                            ensure_ascii=False
+                        tool_call = normalize_tool_call_item(
+                            item,
+                            function_tool,
+                            tool_args
                         )
+                        messages.append(item)
                         result, meta = call_function(
                             log_uid,
                             tool_call["function"]["name"],
@@ -1082,7 +1096,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             )
                         messages.append({
                             "role": "tool",
-                            "tool_call_id": item["tool_calls"][0]["id"],
+                            "tool_call_id": tool_call["id"],
                             "content": result
                         })
                         summ = 0
