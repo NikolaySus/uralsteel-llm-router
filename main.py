@@ -553,7 +553,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                         func_id = tool_call.id
                         func = tool_call.function
                         func_name = getattr(func, "name", "")
-                        arguments = getattr(func, "arguments", "")
+                        arguments = getattr(func, "arguments", None) or ""
                         if func_id and func_name:
                             if finish_reason is None:
                                 return llm_pb2.NewMessageResponse(
@@ -562,11 +562,12 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                                         name=func_name
                                     )
                                 ), None, func_id, func_name, ""
+                            args += arguments
                             return llm_pb2.NewMessageResponse(
                                 function_call_complete=llm_pb2.FunctionCallComplete(
                                     id=func_id,
                                     name=func_name,
-                                    arguments=arguments
+                                    arguments=args
                                 )
                             ), {
                                 "role": "assistant",
@@ -576,7 +577,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                                     "type": "function",
                                     "function": {
                                         "name": func_name,
-                                        "arguments": arguments
+                                        "arguments": args
                                     }
                                     }
                                 ]

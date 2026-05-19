@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from types import SimpleNamespace
 
 
 os.environ.update({
@@ -68,6 +69,81 @@ class TestModelImageSupport(unittest.TestCase):
             prices["openrouterclaude"],
             {"input": 0.000005, "output": 0.000025},
         )
+
+    def test_tool_call_done_with_none_arguments_uses_accumulated_args(self):
+        added_chunk = SimpleNamespace(
+            object="chat.completion.chunk",
+            choices=[
+                SimpleNamespace(
+                    finish_reason=None,
+                    delta=SimpleNamespace(
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call-1",
+                                function=SimpleNamespace(
+                                    name="websearch",
+                                    arguments=None,
+                                ),
+                            )
+                        ]
+                    ),
+                )
+            ],
+        )
+        delta_chunk = SimpleNamespace(
+            object="chat.completion.chunk",
+            choices=[
+                SimpleNamespace(
+                    finish_reason=None,
+                    delta=SimpleNamespace(
+                        tool_calls=[
+                            SimpleNamespace(
+                                id=None,
+                                function=SimpleNamespace(
+                                    name=None,
+                                    arguments='{"query":"Moscow news"}',
+                                ),
+                            )
+                        ]
+                    ),
+                )
+            ],
+        )
+        done_chunk = SimpleNamespace(
+            id="chunk-1",
+            object="chat.completion.chunk",
+            choices=[
+                SimpleNamespace(
+                    finish_reason="tool_calls",
+                    delta=SimpleNamespace(
+                        tool_calls=[
+                            SimpleNamespace(
+                                id="call-1",
+                                function=SimpleNamespace(
+                                    name="websearch",
+                                    arguments=None,
+                                ),
+                            )
+                        ]
+                    ),
+                )
+            ],
+        )
+
+        _, _, call_id, name, args = main.function_call_responses_from_llm_chunk(
+            "test", added_chunk
+        )
+        _, _, call_id, name, args = main.function_call_responses_from_llm_chunk(
+            "test", delta_chunk, call_id, name, args
+        )
+        response, item, _, _, _ = main.function_call_responses_from_llm_chunk(
+            "test", done_chunk, call_id, name, args
+        )
+
+        self.assertTrue(response.HasField("function_call_complete"))
+        function_args = item["tool_calls"][0]["function"]["arguments"]
+        self.assertEqual(function_args, '{"query":"Moscow news"}')
+        self.assertEqual(json.loads(function_args), {"query": "Moscow news"})
 
 
 if __name__ == "__main__":
