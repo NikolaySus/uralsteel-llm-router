@@ -619,9 +619,10 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                                 )
                             ), {
                                 "role": "assistant",
+                                "content": None,
                                 "tool_calls": [
                                     {
-                                    "id": f"{chunk.id}-{func_id}",
+                                    "id": func_id,
                                     "type": "function",
                                     "function": {
                                         "name": func_name,
@@ -647,6 +648,7 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                     )
                 ), {
                     "role": "assistant",
+                    "content": None,
                     "tool_calls": [
                         {
                         "id": id_,
@@ -1049,6 +1051,10 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             log_uid,
                             tool_call,
                             user_message_text(user_message)
+                        )
+                        function["arguments"] = json.dumps(
+                            tool_args,
+                            ensure_ascii=False
                         )
                         result, meta = call_function(
                             log_uid,

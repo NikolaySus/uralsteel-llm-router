@@ -153,6 +153,8 @@ class TestModelImageSupport(unittest.TestCase):
         )
 
         self.assertTrue(response.HasField("function_call_complete"))
+        self.assertIsNone(item["content"])
+        self.assertEqual(item["tool_calls"][0]["id"], "call-1")
         function_args = item["tool_calls"][0]["function"]["arguments"]
         self.assertEqual(function_args, '{"query":"Moscow news"}')
         self.assertEqual(json.loads(function_args), {"query": "Moscow news"})
@@ -173,6 +175,23 @@ class TestModelImageSupport(unittest.TestCase):
         )
 
         self.assertEqual(args, {"query": "Какая сейчас погода в Алма Ате?"})
+
+    def test_fallback_tool_arguments_can_be_written_back_as_json(self):
+        tool_call = {
+            "id": "call-1",
+            "type": "function",
+            "function": {
+                "name": "websearch",
+                "arguments": None,
+            },
+        }
+        args = main.parse_tool_arguments("test", tool_call, "погода")
+        tool_call["function"]["arguments"] = json.dumps(
+            args,
+            ensure_ascii=False,
+        )
+
+        self.assertEqual(tool_call["function"]["arguments"], '{"query": "погода"}')
 
     def test_selected_tool_name_reads_forced_tool_choice(self):
         function_tool = {
