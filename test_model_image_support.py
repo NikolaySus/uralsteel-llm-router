@@ -247,6 +247,26 @@ class TestModelImageSupport(unittest.TestCase):
         self.assertIsNone(meta)
         self.assertEqual(json.loads(result), {"error": "Unknown tool None"})
 
+    def test_is_large_context_error_detects_context_length_error(self):
+        error = (
+            "This endpoint's maximum context length is 1000000 tokens. "
+            "However, you requested about 5452453 tokens."
+        )
+
+        self.assertTrue(main.is_large_context_error(error))
+
+    def test_is_large_context_error_detects_string_length_error(self):
+        error = (
+            "Invalid 'messages[1].content[1].text': string too long. "
+            "Expected a string with maximum length 10485760, "
+            "but got a string with length 16841667 instead."
+        )
+
+        self.assertTrue(main.is_large_context_error(error))
+
+    def test_is_large_context_error_ignores_other_provider_errors(self):
+        self.assertFalse(main.is_large_context_error("Error code: 402"))
+
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
