@@ -411,6 +411,22 @@ def message_content_length(message):
     return len(str(content))
 
 
+LARGE_CONTEXT_ERROR_DETAILS = (
+    "Файл слишком большой для обработки выбранной моделью. "
+    "Попробуйте сократить файл, загрузить часть данных или выбрать файл "
+    "меньшего размера."
+)
+
+
+def is_large_context_error(error):
+    """Return True for provider errors caused by oversized request context."""
+    error_text = str(error).lower()
+    return (
+        "maximum context length" in error_text or
+        ("string too long" in error_text and "maximum length" in error_text)
+    )
+
+
 def parse_tool_arguments(log_uid, tool_call, fallback_query=""):
     """Parse tool-call arguments, tolerating OpenRouter chunks with null args."""
     function = tool_call.get("function", {})
@@ -1117,6 +1133,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                 break
                             yield r
                 except Exception as e:
+                    if is_large_context_error(e):
+                        logger.error("Large context stream error: %s", e)
+                        context.set_code(grpc.StatusCode.RESOURCE_EXHAUSTED)
+                        context.set_details(LARGE_CONTEXT_ERROR_DETAILS)
+                        return
                     logger.error("Stream error: %s", e)
                     context.set_code(grpc.StatusCode.INTERNAL)
                     context.set_details(f"STREAM ERROR: {e}")
