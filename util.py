@@ -572,7 +572,7 @@ async def convert_to_md_async(url: str, docling_address: str):
                     file_extension if file_extension else "not found")
 
         # Скачиваем файл, чтобы узнать его размер и определить тип
-        async_client = httpx.AsyncClient(timeout=60.0)
+        async_client = httpx.AsyncClient(timeout=600.0)
 
         try:
             get_response = await async_client.get(url)
