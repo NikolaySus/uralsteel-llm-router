@@ -55,6 +55,8 @@ for name, value in os.environ.items():
         ALL_API_VARS[api][case] = value
         if case == "model":
             MODEL_TO_API[value] = api
+        elif case == "rename":
+            MODEL_TO_API[value] = api
         elif case == "tools":
             ALL_API_VARS[api][case] = json.loads(value)
 
@@ -89,7 +91,8 @@ def model_supports_images(model: str) -> bool:
 def add_configured_text2text_models(models: list[str]) -> list[str]:
     """Append configured static text2text models and refresh model routing."""
     for api in TEXT2TEXT_ENV_APIS:
-        model = ALL_API_VARS.get(api, {}).get("model")
+        api_vars = ALL_API_VARS.get(api, {})
+        model = api_vars.get("rename") or api_vars.get("model")
         if model:
             models.append(model)
             update_model_to_api([model], api)
@@ -105,6 +108,8 @@ CONFIG_PATH = "config.json"
 TAVILY_BASE_URL = os.environ.get('TAVILY_BASE_URL', 'http://localhost:8000')
 # Максимальное количество результатов веб-поиска
 MAX_RESULTS = int(os.environ.get('MAX_RESULTS', '5'))
+# Максимальное число последовательных tool-call итераций за один запрос
+MAX_TOOL_CALL_ITERATIONS = int(os.environ.get('MAX_TOOL_CALL_ITERATIONS', '3'))
 # Когда генерировать конфигурационный файл (ресурсоёмкая операция)
 GENERATE_CONFIG_WHEN = os.environ.get('GENERATE_CONFIG_WHEN', 'missing')
 # docling-serve
@@ -129,13 +134,21 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "websearch",
-            "description": "Get websearch results by search query.",
+            "description": (
+                "Get websearch results by search query. The query argument "
+                "MUST be written in English only; translate user requests "
+                "to English before calling this tool."
+            ),
             "strict": True,
             "parameters": {
                 "type": "object",
                 "properties": {
                     "query": {
-                        "type": "string"
+                        "type": "string",
+                        "description": (
+                            "English-only search query. Do not use Russian "
+                            "or any other language in this argument."
+                        )
                     }
                 },
                 "required": ["query"],
@@ -361,11 +374,41 @@ def image_gen(query: str):
     )
 
 
+def websearch_tool_payload(query, result):
+    """Build compact tool content for LLMs from Tavily results."""
+    if isinstance(result, list):
+        payload = {
+            "query": query,
+            "results": [
+                {
+                    "title": item.get("title", ""),
+                    "url": item.get("url", ""),
+                    "content": item.get("content", "")
+                }
+                for item in result
+                if isinstance(item, dict)
+            ]
+        }
+        if not payload["results"]:
+            payload["message"] = (
+                "No websearch results were found for this query. "
+                "Answer using the available conversation context and clearly "
+                "mention that current web data was not found."
+            )
+        return payload
+    return {
+        "query": query,
+        "error": str(result)
+    }
+
+
 def call_function(log_uid, name, args):
     """Вызов функции инструмента по имени с аргументами args."""
     logger.debug("(%s) calling %s with: %s", log_uid, name, args)
     if name == "websearch":
+        query = args.get("query", "")
         result = websearch(**args, tavily_base_url=TAVILY_BASE_URL)
+        tool_payload = websearch_tool_payload(query, result)
         meta = llm_pb2.ToolMetadataResponse(
             websearch=llm_pb2.ToolWebSearchMetadata(
                 item=[llm_pb2.ToolWebSearchMetadataItem(
@@ -376,7 +419,7 @@ def call_function(log_uid, name, args):
                     in result] if isinstance(result, list) else []
             )
         )
-        return json.dumps(result,
+        return json.dumps(tool_payload,
                           ensure_ascii=False), meta
     elif name == "image_gen":
         result, meta = image_gen(**args)
@@ -629,6 +672,33 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
     - .function_call_arguments.done: завершенные аргументы (FunctionCallDone)
     - .output_item.done: завершение вызова функции (FunctionCallComplete)
     """
+    def plain_extra_content(value):
+        if value is None:
+            return None
+        if hasattr(value, "model_dump"):
+            return value.model_dump()
+        if isinstance(value, dict):
+            return value
+        return None
+
+    def tool_call_item(func_id, func_name, arguments, extra_content=None):
+        tool_call = {
+            "id": func_id,
+            "type": "function",
+            "function": {
+                "name": func_name,
+                "arguments": arguments
+            }
+        }
+        extra_content = plain_extra_content(extra_content)
+        if extra_content is not None:
+            tool_call["extra_content"] = extra_content
+        return {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [tool_call]
+        }
+
     if hasattr(chunk, "object") and (
         chunk.object == "chat.completion.chunk" and
         hasattr(chunk, "choices") and chunk.choices):
@@ -640,68 +710,61 @@ def function_call_responses_from_llm_chunk(log_uid, chunk, id_="", nm_="", args=
                 for tool_call in delta.tool_calls:
                     if hasattr(tool_call, "id") and hasattr(tool_call,
                                                             "function"):
-                        func_id = tool_call.id
+                        func_id = tool_call.id or id_
                         func = tool_call.function
-                        func_name = getattr(func, "name", "")
+                        func_name = getattr(func, "name", "") or nm_
                         arguments = getattr(func, "arguments", None) or ""
+                        args += arguments
+                        extra_content = getattr(tool_call, "extra_content", None)
                         if func_id and func_name:
-                            if finish_reason is None:
+                            if extra_content is not None and arguments:
+                                return llm_pb2.NewMessageResponse(
+                                    function_call_complete=llm_pb2.FunctionCallComplete(
+                                        id=func_id,
+                                        name=func_name,
+                                        arguments=args
+                                    )
+                                ), tool_call_item(
+                                    func_id, func_name, args, extra_content
+                                ), None, None, None
+                            if not id_ or not nm_:
                                 return llm_pb2.NewMessageResponse(
                                     function_call_added=llm_pb2.FunctionCallAdded(
                                         id=func_id,
                                         name=func_name
                                     )
-                                ), None, func_id, func_name, ""
-                            args += arguments
+                                ), None, func_id, func_name, args
+                            if finish_reason not in ('tool_calls', 'stop'):
+                                return llm_pb2.NewMessageResponse(
+                                    function_call_delta=llm_pb2.FunctionCallDelta(
+                                        id=func_id,
+                                        content=arguments
+                                    )
+                                ), None, func_id, func_name, args
                             return llm_pb2.NewMessageResponse(
                                 function_call_complete=llm_pb2.FunctionCallComplete(
                                     id=func_id,
                                     name=func_name,
                                     arguments=args
                                 )
-                            ), {
-                                "role": "assistant",
-                                "content": "",
-                                "tool_calls": [
-                                    {
-                                    "id": func_id,
-                                    "type": "function",
-                                    "function": {
-                                        "name": func_name,
-                                        "arguments": args
-                                    }
-                                    }
-                                ]
-                            }, None, None, None
+                            ), tool_call_item(func_id, func_name, args), None, None, None
                         else:
-                            args += arguments
                             return llm_pb2.NewMessageResponse(
                                 function_call_delta=llm_pb2.FunctionCallDelta(
                                     id=id_,
                                     content=arguments
                                 )
                             ), None, id_, nm_, args
-            elif delta.tool_calls is None and finish_reason == 'tool_calls':
+            elif (delta.tool_calls is None and
+                  finish_reason in ('tool_calls', 'stop') and
+                  id_ and nm_):
                 return llm_pb2.NewMessageResponse(
                     function_call_complete=llm_pb2.FunctionCallComplete(
                         id=id_,
                         name=nm_,
                         arguments=args
                     )
-                ), {
-                    "role": "assistant",
-                    "content": "",
-                    "tool_calls": [
-                        {
-                        "id": id_,
-                        "type": "function",
-                        "function": {
-                            "name": nm_,
-                            "arguments": args
-                        }
-                        }
-                    ]
-                }, None, None, None
+                ), tool_call_item(id_, nm_, args), None, None, None
     return None, None, id_, nm_, args
 
 
@@ -741,6 +804,18 @@ def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):
         logger.info("(%s) completion_tokens %s, prompt_tokens %s, total_tokens %s",
             log_uid, completion_tokens or '-', prompt_tokens or '-', total_tokens or '-')
 
+    # Сначала отдаём текстовые delta. Google OpenAI-compatible stream может
+    # присылать usage в том же chunk, что и content; если обработать usage
+    # первым, видимый текст ответа теряется.
+    if delta_content is not None or delta_reasoning_content is not None:
+        return llm_pb2.NewMessageResponse(
+            generate=llm_pb2.GenerateResponseType(
+                content=(delta_content or ""),
+                reasoning_content=(delta_reasoning_content or ""),
+                datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
+            )
+        ), delta_content
+
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
     if (total_tokens is not None and (
             prompt_tokens is not None and completion_tokens is not None)):
@@ -764,15 +839,6 @@ def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):
                 datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
             )
         ), None
-    # Если один из delta content есть, создаём GenerateResponseType
-    elif delta_content is not None or delta_reasoning_content is not None:
-        return llm_pb2.NewMessageResponse(
-            generate=llm_pb2.GenerateResponseType(
-                content=(delta_content or ""),
-                reasoning_content=(delta_reasoning_content or ""),
-                datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
-            )
-        ), delta_content
     else:
         # Скип
         return None, None
@@ -1032,9 +1098,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                 model_to_use = ALL_API_VARS["openaivlm"]["model"]
             else:
                 model_to_use = ALL_API_VARS["yandexai"]["model"]
-            api_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["base_url"]
-            key_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]]["key"]
-            dir_to_use = ALL_API_VARS[MODEL_TO_API[model_to_use]].get("folder")
+            api_vars = ALL_API_VARS[MODEL_TO_API[model_to_use]]
+            api_to_use = api_vars["base_url"]
+            key_to_use = api_vars["key"]
+            dir_to_use = api_vars.get("folder")
+            model_to_send = api_vars["model"]
             # Получаем информацию о цене (может быть float или dict с 'input'/'output')
             api_name = MODEL_TO_API[model_to_use]
             if "price_coef_input" in ALL_API_VARS[api_name]:
@@ -1070,7 +1138,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     sumr = 0
                     for r, i, d in proc_llm_stream_responses(
                         price_info, log_uid, messages, function_tool, api_to_use,
-                        key_to_use, dir_to_use, model_to_use, summ, sumr
+                        key_to_use, dir_to_use, model_to_send, summ, sumr
                     ):
                         if d is not None:
                             content += d
@@ -1083,8 +1151,14 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         if i is not None:
                             item = i
                         yield r
-                    if item is not None:
-                        tool_call = item["tool_calls"][0]
+                    tool_iterations = 0
+                    while (item is not None and
+                           tool_iterations < MAX_TOOL_CALL_ITERATIONS and
+                           context.is_active()):
+                        current_item = item
+                        item = None
+                        tool_iterations += 1
+                        tool_call = current_item["tool_calls"][0]
                         function = tool_call.get("function", {})
                         if not function.get("name"):
                             function["name"] = selected_tool_name(function_tool)
@@ -1094,11 +1168,11 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                             user_message_text(user_message)
                         )
                         tool_call = normalize_tool_call_item(
-                            item,
+                            current_item,
                             function_tool,
                             tool_args
                         )
-                        messages.append(item)
+                        messages.append(current_item)
                         result, meta = call_function(
                             log_uid,
                             tool_call["function"]["name"],
@@ -1121,7 +1195,7 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         sumr = 0
                         for r, i, d in proc_llm_stream_responses(
                             price_info, log_uid, messages, "none", api_to_use, key_to_use,
-                            dir_to_use, model_to_use, summ, sumr
+                            dir_to_use, model_to_send, summ, sumr
                         ):
                             if d is not None:
                                 content += d
@@ -1131,7 +1205,24 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                                     "(%s) client cancelled, stopping stream",
                                     log_uid)
                                 break
+                            if i is not None:
+                                item = i
                             yield r
+                    if item is not None and not content:
+                        logger.warning("(%s) tool-call iteration limit reached",
+                                       log_uid)
+                        fallback = (
+                            "Не удалось получить финальный ответ после "
+                            "нескольких вызовов инструмента."
+                        )
+                        content += fallback
+                        yield llm_pb2.NewMessageResponse(
+                            generate=llm_pb2.GenerateResponseType(
+                                content=fallback,
+                                reasoning_content="",
+                                datetime=datetime.now(DATETIME_TZ).strftime(DATETIME_FORMAT)
+                            )
+                        )
                 except Exception as e:
                     if is_large_context_error(e):
                         logger.error("Large context stream error: %s", e)
