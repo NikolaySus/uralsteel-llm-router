@@ -347,6 +347,7 @@ def image_gen(query: str):
     """Генерирует изображение по запросу и возвращает его URL."""
     result = None
     image_base64 = None
+    expected_cost = image_generation_fallback_cost()
     try:
         client = OpenAI(
             api_key=ALL_API_VARS["openaiimgen"]["key"],
@@ -361,6 +362,7 @@ def image_gen(query: str):
         )
 
         image_base64 = response.data[0].b64_json
+        expected_cost = image_generation_expected_cost(response)
         result = ("The image has been generated, everything is fine. "
                   "Do not say that you can't generate the image, you "
                   "have already done this if you see this message.")
@@ -369,8 +371,74 @@ def image_gen(query: str):
     return result, llm_pb2.ToolMetadataResponse(
         image_gen=llm_pb2.ToolImageGenMetadata(
             image_base64=image_base64 or "",
-            expected_cost=ALL_API_VARS["openaiimgen"]["price_coef"]
+            expected_cost=expected_cost
         )
+    )
+
+
+def value_from_obj(obj, *path):
+    """Read nested values from SDK models or dicts."""
+    cur = obj
+    for key in path:
+        if cur is None:
+            return None
+        if isinstance(cur, dict):
+            cur = cur.get(key)
+        else:
+            cur = getattr(cur, key, None)
+    return cur
+
+
+def image_generation_fallback_cost():
+    pricing = ALL_API_VARS["openaiimgen"].get("image_price_config", {})
+    return pricing.get(
+        "fallback",
+        ALL_API_VARS["openaiimgen"].get("price_coef", 0.0)
+    )
+
+
+def image_generation_expected_cost(response):
+    """Calculate GPT Image cost from usage, falling back to configured estimate."""
+    pricing = ALL_API_VARS["openaiimgen"].get("image_price_config")
+    if not pricing:
+        return image_generation_fallback_cost()
+
+    usage = getattr(response, "usage", None)
+    if usage is None:
+        logger.warning(
+            "Image generation usage is missing; using fallback cost %s",
+            image_generation_fallback_cost()
+        )
+        return image_generation_fallback_cost()
+
+    input_details = value_from_obj(usage, "input_tokens_details")
+    output_details = value_from_obj(usage, "output_tokens_details")
+
+    text_input = value_from_obj(input_details, "text_tokens") or 0
+    image_input = value_from_obj(input_details, "image_tokens") or 0
+    if not (text_input or image_input):
+        text_input = value_from_obj(usage, "input_tokens") or 0
+    image_output = (
+        value_from_obj(output_details, "image_tokens") or
+        value_from_obj(usage, "output_tokens") or
+        0
+    )
+    cached_text_input = value_from_obj(input_details, "cached_text_tokens") or 0
+    cached_image_input = value_from_obj(input_details, "cached_image_tokens") or 0
+
+    if not (text_input or image_input or image_output):
+        logger.warning(
+            "Image generation usage is incomplete; using fallback cost %s",
+            image_generation_fallback_cost()
+        )
+        return image_generation_fallback_cost()
+
+    return (
+        text_input * pricing.get("text_input", 0) +
+        cached_text_input * pricing.get("cached_text_input", 0) +
+        image_input * pricing.get("image_input", 0) +
+        cached_image_input * pricing.get("cached_image_input", 0) +
+        image_output * pricing.get("image_output", 0)
     )
 
 
@@ -1376,6 +1444,17 @@ if __name__ == "__main__":
             raise ValueError("Invalid config: missing 'generated_at'")
         for name, coef in config.get("prices_coefs", {}).items():
             if isinstance(coef, dict):
+                if {"text_input", "image_output"} & set(coef):
+                    ALL_API_VARS[name]["image_price_config"] = coef
+                    logger.info(
+                        "Image price config for %s: text_input=%.10f, "
+                        "image_input=%.10f, image_output=%.10f, fallback=%s",
+                        name, coef.get("text_input", 0),
+                        coef.get("image_input", 0),
+                        coef.get("image_output", 0),
+                        coef.get("fallback", "-")
+                    )
+                    continue
                 # Модели с разделением на входные и выходные токены
                 ALL_API_VARS[name]["price_coef_input"] = coef.get("input", 0)
                 ALL_API_VARS[name]["price_coef_output"] = coef.get("output", 0)

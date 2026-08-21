@@ -28,6 +28,18 @@ os.environ.update({
 import main
 
 
+for env_name, env_value in os.environ.items():
+    if not env_name.startswith(main.CONST):
+        continue
+    api_and_case = env_name[main.CONST_LEN:].lower()
+    delim = api_and_case.find("_")
+    api = api_and_case[:delim]
+    case = api_and_case[delim + 1:]
+    main.ALL_API_VARS.setdefault(api, {})[case] = env_value
+    if case in {"model", "rename"}:
+        main.MODEL_TO_API[env_value] = api
+
+
 class TestModelImageSupport(unittest.TestCase):
     def test_env_flag_marks_openaimini_as_image_capable(self):
         self.assertTrue(main.model_supports_images("test-mini"))
