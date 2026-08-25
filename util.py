@@ -64,8 +64,13 @@ def remote_pdf_to_b64_images(url: str):
     """
     Скачивает PDF по URL и преобразовывает MarkDown с base64 картинками
     """
-    r = requests.get(url)
-    data = r.content
+    response = requests.get(url, timeout=600)
+    response.raise_for_status()
+    return pdf_bytes_to_b64_images(response.content)
+
+
+def pdf_bytes_to_b64_images(data: bytes):
+    """Converts PDF bytes into base64-encoded page images."""
     doc = pymupdf.Document(stream=data)
     ret = []
     for page in doc:
@@ -74,6 +79,24 @@ def remote_pdf_to_b64_images(url: str):
             f"data:image/png;base64,{base64.b64encode(
                 pix.tobytes(output="png")).decode("utf-8")}")
     return ret
+
+
+def _safe_http_text(value: str, limit: int = 1024) -> str:
+    """Redacts URL query strings and bounds external text written to logs."""
+    redacted = re.sub(r"(https?://[^\s?]+)\?[^\s]+", r"\1?<redacted>", value)
+    return redacted[:limit] + ("..." if len(redacted) > limit else "")
+
+
+def _raise_for_status(response: httpx.Response, stage: str) -> None:
+    """Raises for HTTP errors after logging a bounded, redacted response body."""
+    if response.is_error:
+        logger.error(
+            "%s failed: HTTP %s, body=%s",
+            stage,
+            response.status_code,
+            _safe_http_text(response.text),
+        )
+    response.raise_for_status()
 
 
 def image_url_to_base64(url: str, imghdr_to_mime: dict) -> str:
@@ -559,11 +582,14 @@ async def convert_to_md_async(url: str, docling_address: str):
 
     filename = ""
     file_extension = ""
+    file_data = None
+    async_client = None
 
     try:
         # Сначала пытаемся получить расширение из URL
         parsed_url = urllib.parse.urlparse(url)
         url_path = parsed_url.path
+        filename = os.path.basename(urllib.parse.unquote(url_path))
         if "." in url_path:
             _, url_extension = urllib.parse.unquote(url_path).rsplit(".", 1)
             file_extension = url_extension.lower()
@@ -576,10 +602,13 @@ async def convert_to_md_async(url: str, docling_address: str):
 
         try:
             get_response = await async_client.get(url)
+            _raise_for_status(get_response, "File download")
             file_data = get_response.content
             original_size = len(file_data)
         except Exception as e:
-            logger.error("Failed to download file: %s", e)
+            logger.error(
+                "Failed to download file: %s", _safe_http_text(str(e))
+            )
             raise
 
         logger.info("original_size=%s", original_size)
@@ -598,26 +627,40 @@ async def convert_to_md_async(url: str, docling_address: str):
             logger.error(error_msg)
             raise ValueError(error_msg)
 
-        # Теперь кидаем запрос в API Docling.
-        docling_url = f"http://{docling_address}/v1/convert/source"
-        payload = {
-            "options": {
-                "from_formats": from_formats,
-                "to_formats": ["md"],
+        if not filename or not os.path.splitext(filename)[1]:
+            filename = f"document.{file_extension}"
+
+        # Docling receives the bytes already downloaded by the router.
+        docling_url = f"http://{docling_address}/v1/convert/file"
+        response = await async_client.post(
+            docling_url,
+            data={
+                "from_formats": file_extension,
+                "to_formats": "md",
                 "image_export_mode": "embedded",
-                "do_ocr": False,
-                "abort_on_error": False,
+                "do_ocr": "false",
+                "abort_on_error": "false",
             },
-            "sources": [{
-                "kind": "http",
-                "url": url #.replace('localhost', 'minio-2')
-            }]
-        }
-        response = await async_client.post(docling_url, json=payload)
+            files={
+                "files": (filename, file_data, "application/octet-stream"),
+            },
+        )
+        _raise_for_status(response, "Docling conversion")
         data = response.json()
-        filename = urllib.parse.unquote(
-            data.get("document", {"filename":""}).get("filename"))
-        md_content = data.get("document", {}).get("md_content")
+        if not isinstance(data, dict):
+            raise ValueError("Docling response is not a JSON object")
+        if data.get("status") != "success":
+            raise ValueError(
+                f"Docling status is not success: {data.get('status')!r}"
+            )
+        if data.get("errors"):
+            raise ValueError(f"Docling returned errors: {data.get('errors')!r}")
+
+        document = data.get("document") or {}
+        returned_filename = document.get("filename")
+        if returned_filename:
+            filename = urllib.parse.unquote(returned_filename)
+        md_content = document.get("md_content")
         # Считаем размер md_content в байтах
         assert(md_content is not None), "No md_content in docling response"
         md_size = len(md_content.encode('utf-8'))
@@ -626,31 +669,36 @@ async def convert_to_md_async(url: str, docling_address: str):
             raise AssertionError(
                 f"Original file size ({original_size} bytes) is more than "
                 f"1.1 times greater than markdown size ({md_size} bytes).")
+        await async_client.aclose()
+        async_client = None
         return filename, md_content
     except Exception as e:
-        logger.error("Converting document to md failed: %s", e)
+        if async_client is not None:
+            await async_client.aclose()
+            async_client = None
+        logger.error(
+            "Converting document to md failed: %s",
+            _safe_http_text(str(e)),
+        )
         logger.info("Falling back to dumb markdown... Format: %s", file_extension)
         
         try:
             if file_extension == 'pdf':
                 # Для PDF используем конвертацию в изображения
+                if file_data is None:
+                    raise ValueError("No downloaded file data for PDF fallback")
                 return filename, "\n".join(
                     [f"## PAGE {i}\n\n![page {i}]({u})\n\n"
                      for i, u
-                     in enumerate(remote_pdf_to_b64_images(url))])
+                     in enumerate(pdf_bytes_to_b64_images(file_data))])
             
             elif file_extension in ('docx', 'doc'):
                 # Для DOCX и DOC используем markitdown
-                # Если у нас уже есть данные файла в переменной file_data (из текущего блока try)
-                # То используем их, иначе скачиваем заново
-                try:
-                    md_content = docx_to_markdown_via_markitdown(file_data, file_extension)
-                except NameError:
-                    # file_data не определён, скачиваем файл заново
-                    async_client = httpx.AsyncClient(timeout=60.0)
-                    get_response = await async_client.get(url)
-                    file_data = get_response.content
-                    md_content = docx_to_markdown_via_markitdown(file_data, file_extension)
+                if file_data is None:
+                    raise ValueError("No downloaded file data for DOC fallback")
+                md_content = docx_to_markdown_via_markitdown(
+                    file_data, file_extension
+                )
                 return filename, md_content
             
             else:
