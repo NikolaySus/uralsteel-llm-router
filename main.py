@@ -88,6 +88,35 @@ def model_supports_images(model: str) -> bool:
     return api_supports_images(MODEL_TO_API.get(model, ""))
 
 
+def calculate_token_cost(price_info, prompt_tokens, completion_tokens,
+                         cached_tokens=0):
+    """Calculate token cost for flat, split, cached, and tiered pricing."""
+    prompt_tokens = prompt_tokens or 0
+    completion_tokens = completion_tokens or 0
+    if not isinstance(price_info, dict):
+        return price_info * (prompt_tokens + completion_tokens)
+
+    threshold = price_info.get("long_context_threshold")
+    long_context = threshold is not None and prompt_tokens > threshold
+    prefix = "long_context_" if long_context else ""
+    input_coef = price_info.get(
+        f"{prefix}input", price_info.get("input", 0)
+    )
+    output_coef = price_info.get(
+        f"{prefix}output", price_info.get("output", 0)
+    )
+    cached_coef = price_info.get(
+        f"{prefix}cached_input", input_coef
+    )
+    cached_tokens = max(0, min(cached_tokens or 0, prompt_tokens))
+    uncached_tokens = prompt_tokens - cached_tokens
+    return (
+        input_coef * uncached_tokens
+        + cached_coef * cached_tokens
+        + output_coef * completion_tokens
+    )
+
+
 def add_configured_text2text_models(models: list[str]) -> list[str]:
     """Append configured static text2text models and refresh model routing."""
     for api in TEXT2TEXT_ENV_APIS:
@@ -869,8 +898,15 @@ def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):
         completion_tokens = getattr(usage, "completion_tokens", None)
         prompt_tokens = getattr(usage, "prompt_tokens", None)
         total_tokens = getattr(usage, "total_tokens", None)
+        prompt_details = getattr(usage, "prompt_tokens_details", None)
+        if isinstance(prompt_details, dict):
+            cached_tokens = prompt_details.get("cached_tokens", 0)
+        else:
+            cached_tokens = getattr(prompt_details, "cached_tokens", 0)
         logger.info("(%s) completion_tokens %s, prompt_tokens %s, total_tokens %s",
             log_uid, completion_tokens or '-', prompt_tokens or '-', total_tokens or '-')
+    else:
+        cached_tokens = 0
 
     # Сначала отдаём текстовые delta. Google OpenAI-compatible stream может
     # присылать usage в том же chunk, что и content; если обработать usage
@@ -887,16 +923,16 @@ def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):
     # Если есть usage или конечный сигнал, создаём CompleteResponseType
     if (total_tokens is not None and (
             prompt_tokens is not None and completion_tokens is not None)):
-        # Рассчитываем стоимость в зависимости от структуры price_info
-        if isinstance(price_info, dict):
-            # Разные цены для входных и выходных токенов
-            input_coef = price_info.get("input", 0)
-            output_coef = price_info.get("output", 0)
-            expected_cost = (input_coef * (prompt_tokens or prompt_tokens_fix) +
-                           output_coef * (completion_tokens or completion_tokens_fix))
-        else:
-            # Единая цена (для обратной совместимости)
-            expected_cost = price_info * (total_tokens or total_tokens_fix)
+        effective_prompt_tokens = prompt_tokens or prompt_tokens_fix
+        effective_completion_tokens = (
+            completion_tokens or completion_tokens_fix
+        )
+        expected_cost = calculate_token_cost(
+            price_info,
+            effective_prompt_tokens,
+            effective_completion_tokens,
+            cached_tokens,
+        )
         
         return llm_pb2.NewMessageResponse(
             complete=llm_pb2.CompleteResponseType(
@@ -915,7 +951,8 @@ def responses_from_llm_chunk(price_info, log_uid, chunk, summ, sumr):
 
 def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
                               api_to_use, key_to_use, dir_to_use,
-                              model_to_use, summ, sumr):
+                              model_to_use, summ, sumr,
+                              reasoning_effort=None):
     """Генератор для обработки потока ответов от LLM.
     
     Args:
@@ -930,6 +967,9 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
     """
     logger.info("(%s) model_to_use is set to %s, tool_choice is set to %s",
           log_uid, model_to_use or '-', tool_choice or '-')
+    reasoning_options = {}
+    if reasoning_effort:
+        reasoning_options["reasoning_effort"] = reasoning_effort
     if tool_choice != "none":
         response = OpenAI(
             base_url=api_to_use,
@@ -941,7 +981,8 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
             stream=True,
             stream_options={"include_usage": True},
             tool_choice=tool_choice,
-            tools=TOOLS
+            tools=TOOLS,
+            **reasoning_options,
         )
     else:
         response = OpenAI(
@@ -953,6 +994,7 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
             messages=messages,
             stream=True,
             stream_options={"include_usage": True},
+            **reasoning_options,
         )
     try:
         id_ = ""
@@ -1171,9 +1213,12 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
             key_to_use = api_vars["key"]
             dir_to_use = api_vars.get("folder")
             model_to_send = api_vars["model"]
+            reasoning_effort = api_vars.get("reasoning_effort")
             # Получаем информацию о цене (может быть float или dict с 'input'/'output')
             api_name = MODEL_TO_API[model_to_use]
-            if "price_coef_input" in ALL_API_VARS[api_name]:
+            if "price_config" in ALL_API_VARS[api_name]:
+                price_info = ALL_API_VARS[api_name]["price_config"]
+            elif "price_coef_input" in ALL_API_VARS[api_name]:
                 # Модель с разделением на входные и выходные токены
                 price_info = {
                     "input": ALL_API_VARS[api_name]["price_coef_input"],
@@ -1206,7 +1251,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     sumr = 0
                     for r, i, d in proc_llm_stream_responses(
                         price_info, log_uid, messages, function_tool, api_to_use,
-                        key_to_use, dir_to_use, model_to_send, summ, sumr
+                        key_to_use, dir_to_use, model_to_send, summ, sumr,
+                        reasoning_effort
                     ):
                         if d is not None:
                             content += d
@@ -1263,7 +1309,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         sumr = 0
                         for r, i, d in proc_llm_stream_responses(
                             price_info, log_uid, messages, "none", api_to_use, key_to_use,
-                            dir_to_use, model_to_send, summ, sumr
+                            dir_to_use, model_to_send, summ, sumr,
+                            reasoning_effort
                         ):
                             if d is not None:
                                 content += d
@@ -1455,6 +1502,7 @@ if __name__ == "__main__":
                         coef.get("fallback", "-")
                     )
                     continue
+                ALL_API_VARS[name]["price_config"] = coef
                 # Модели с разделением на входные и выходные токены
                 ALL_API_VARS[name]["price_coef_input"] = coef.get("input", 0)
                 ALL_API_VARS[name]["price_coef_output"] = coef.get("output", 0)

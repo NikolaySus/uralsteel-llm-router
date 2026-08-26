@@ -2,7 +2,7 @@ import os
 import json
 import unittest
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 os.environ.setdefault("DOCLING_ADDRESS", "localhost:5001")
 
@@ -10,6 +10,128 @@ import main
 
 
 class TestStreamChunkResponse(unittest.TestCase):
+    def test_reasoning_effort_is_sent_without_tools(self):
+        client = MagicMock()
+        stream = MagicMock()
+        stream.__iter__.return_value = iter([])
+        client.chat.completions.create.return_value = stream
+
+        with patch.object(main, "OpenAI", return_value=client):
+            list(main.proc_llm_stream_responses(
+                {"input": 0, "output": 0},
+                "test",
+                [{"role": "user", "content": "hello"}],
+                "none",
+                "https://example.test/v1",
+                "key",
+                None,
+                "gpt-5.6-sol",
+                5,
+                0,
+                "none",
+            ))
+
+        kwargs = client.chat.completions.create.call_args.kwargs
+        self.assertEqual(kwargs["reasoning_effort"], "none")
+        self.assertNotIn("tools", kwargs)
+
+    def test_reasoning_effort_is_sent_with_tools(self):
+        client = MagicMock()
+        stream = MagicMock()
+        stream.__iter__.return_value = iter([])
+        client.chat.completions.create.return_value = stream
+        tool_choice = {
+            "type": "function",
+            "function": {"name": "websearch"},
+        }
+
+        with patch.object(main, "OpenAI", return_value=client):
+            list(main.proc_llm_stream_responses(
+                {"input": 0, "output": 0},
+                "test",
+                [{"role": "user", "content": "hello"}],
+                tool_choice,
+                "https://example.test/v1",
+                "key",
+                None,
+                "gpt-5.6-sol",
+                5,
+                0,
+                "none",
+            ))
+
+        kwargs = client.chat.completions.create.call_args.kwargs
+        self.assertEqual(kwargs["reasoning_effort"], "none")
+        self.assertEqual(kwargs["tool_choice"], tool_choice)
+        self.assertEqual(kwargs["tools"], main.TOOLS)
+
+    def test_tiered_cost_uses_standard_price_at_threshold(self):
+        price = {
+            "input": 0.000004,
+            "cached_input": 0.0000004,
+            "output": 0.000020,
+            "long_context_threshold": 272000,
+            "long_context_input": 0.000008,
+            "long_context_cached_input": 0.0000008,
+            "long_context_output": 0.000030,
+        }
+
+        cost = main.calculate_token_cost(price, 272000, 1000, 2000)
+
+        expected = 270000 * 0.000004 + 2000 * 0.0000004 + 1000 * 0.000020
+        self.assertAlmostEqual(cost, expected)
+
+    def test_tiered_cost_uses_long_context_price_above_threshold(self):
+        price = {
+            "input": 0.000004,
+            "cached_input": 0.0000004,
+            "output": 0.000020,
+            "long_context_threshold": 272000,
+            "long_context_input": 0.000008,
+            "long_context_cached_input": 0.0000008,
+            "long_context_output": 0.000030,
+        }
+
+        cost = main.calculate_token_cost(price, 272001, 1000, 2000)
+
+        expected = 270001 * 0.000008 + 2000 * 0.0000008 + 1000 * 0.000030
+        self.assertAlmostEqual(cost, expected)
+
+    def test_flat_and_split_price_formats_remain_supported(self):
+        self.assertEqual(main.calculate_token_cost(0.1, 2, 3), 0.5)
+        self.assertEqual(
+            main.calculate_token_cost(
+                {"input": 0.01, "output": 0.02}, 2, 3
+            ),
+            0.08,
+        )
+
+    def test_usage_cached_tokens_are_priced_separately(self):
+        chunk = SimpleNamespace(
+            choices=[],
+            usage=SimpleNamespace(
+                prompt_tokens=100,
+                completion_tokens=10,
+                total_tokens=110,
+                prompt_tokens_details=SimpleNamespace(cached_tokens=40),
+            ),
+        )
+        price = {
+            "input": 0.01,
+            "cached_input": 0.001,
+            "output": 0.02,
+        }
+
+        response, _ = main.responses_from_llm_chunk(
+            price, "test", chunk, 0, 0
+        )
+
+        self.assertTrue(response.HasField("complete"))
+        self.assertAlmostEqual(
+            response.complete.expected_cost_usd,
+            60 * 0.01 + 40 * 0.001 + 10 * 0.02,
+        )
+
     def test_content_with_usage_is_returned_as_generate(self):
         chunk = SimpleNamespace(
             choices=[

@@ -5,7 +5,9 @@ from types import SimpleNamespace
 
 
 os.environ.update({
-    "INFERENCE_API_OPENAIVLM_MODEL": "test-vlm",
+    "INFERENCE_API_OPENAIVLM_MODEL": "gpt-5.6-sol",
+    "INFERENCE_API_OPENAIVLM_RENAME": "gpt-5.5",
+    "INFERENCE_API_OPENAIVLM_REASONING_EFFORT": "none",
     "INFERENCE_API_OPENAIVLM_BASE_URL": "https://example.test/v1",
     "INFERENCE_API_OPENAIVLM_KEY": "test",
     "INFERENCE_API_OPENAIMINI_MODEL": "test-mini",
@@ -15,11 +17,13 @@ os.environ.update({
     "INFERENCE_API_DEEPSEEK_MODEL": "test-deepseek",
     "INFERENCE_API_DEEPSEEK_BASE_URL": "https://example.test/v1",
     "INFERENCE_API_DEEPSEEK_KEY": "test",
-    "INFERENCE_API_OPENROUTERGEMINI_MODEL": "google/gemini-3.1-pro-preview",
+    "INFERENCE_API_OPENROUTERGEMINI_MODEL": "gemini-3.1-pro-preview",
+    "INFERENCE_API_OPENROUTERGEMINI_RENAME": "google/gemini-3.1-pro-preview",
     "INFERENCE_API_OPENROUTERGEMINI_BASE_URL": "https://openrouter.ai/api/v1",
     "INFERENCE_API_OPENROUTERGEMINI_KEY": "test",
     "INFERENCE_API_OPENROUTERGEMINI_VLM": "true",
-    "INFERENCE_API_OPENROUTERCLAUDE_MODEL": "anthropic/claude-opus-4.7",
+    "INFERENCE_API_OPENROUTERCLAUDE_MODEL": "claude-opus-5",
+    "INFERENCE_API_OPENROUTERCLAUDE_RENAME": "anthropic/claude-opus-4.7",
     "INFERENCE_API_OPENROUTERCLAUDE_BASE_URL": "https://openrouter.ai/api/v1",
     "INFERENCE_API_OPENROUTERCLAUDE_KEY": "test",
     "INFERENCE_API_OPENROUTERCLAUDE_VLM": "true",
@@ -49,13 +53,17 @@ class TestModelImageSupport(unittest.TestCase):
 
     def test_openaivlm_is_image_capable_by_default(self):
         main.ALL_API_VARS["openaivlm"].pop("vlm", None)
-        self.assertTrue(main.model_supports_images("test-vlm"))
+        self.assertTrue(main.model_supports_images("gpt-5.5"))
 
     def test_openrouter_models_are_added_and_image_capable(self):
         models = main.add_configured_text2text_models([])
 
+        self.assertIn("gpt-5.5", models)
         self.assertIn("google/gemini-3.1-pro-preview", models)
         self.assertIn("anthropic/claude-opus-4.7", models)
+        self.assertNotIn("claude-opus-5", models)
+        self.assertNotIn("gpt-5.6-sol", models)
+        self.assertEqual(main.MODEL_TO_API["gpt-5.5"], "openaivlm")
         self.assertEqual(
             main.MODEL_TO_API["google/gemini-3.1-pro-preview"],
             "openroutergemini",
@@ -75,7 +83,15 @@ class TestModelImageSupport(unittest.TestCase):
 
         self.assertEqual(
             prices["openroutergemini"],
-            {"input": 0.000002, "output": 0.000012},
+            {
+                "input": 0.000002,
+                "cached_input": 0.0000002,
+                "output": 0.000012,
+                "long_context_threshold": 200000,
+                "long_context_input": 0.000004,
+                "long_context_cached_input": 0.0000004,
+                "long_context_output": 0.000018,
+            },
         )
         self.assertEqual(
             prices["openrouterclaude"],
