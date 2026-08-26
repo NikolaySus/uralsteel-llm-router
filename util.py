@@ -398,10 +398,23 @@ def _convert_doc_to_docx_unoconv(doc_data: bytes) -> bytes:
             
             # Запускаем unoconv: doc -> docx
             cmd = ['unoconv', '-f', 'docx', '-o', tmp_output_path, tmp_input_path]
+            unoconv_env = os.environ.copy()
+            system_dist_packages = '/usr/lib/python3/dist-packages'
+            if os.path.isdir(system_dist_packages):
+                python_path = unoconv_env.get('PYTHONPATH')
+                unoconv_env['PYTHONPATH'] = os.pathsep.join(
+                    filter(None, (system_dist_packages, python_path))
+                )
             
             logger.info("Converting DOC to DOCX using unoconv...")
             logger.debug("Command: %s", ' '.join(cmd))
-            result = subprocess.run(cmd, capture_output=True, timeout=30, text=True)
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                timeout=30,
+                text=True,
+                env=unoconv_env,
+            )
             
             logger.debug("unoconv return code: %d", result.returncode)
             if result.stdout:
