@@ -328,6 +328,27 @@ def available_models(base_url: str,
     return check_arr_ret
 
 
+def get_text2text_models():
+    """Return Yandex models when available plus statically configured models."""
+    try:
+        models = available_models(
+            ALL_API_VARS["yandexai"]["base_url"],
+            ALL_API_VARS["yandexai"]["key"],
+            ALL_API_VARS["yandexai"]["folder"],
+            WHITELIST_REGEX_TEXT2TEXT,
+            BLACKLIST_REGEX_TEXT2TEXT,
+        )
+        update_model_to_api(models, "yandexai")
+    except Exception as e:
+        logger.warning(
+            "Getting Yandex text2text models failed; using configured "
+            "models only: %s",
+            e,
+        )
+        models = []
+    return add_configured_text2text_models(models)
+
+
 def transcribe_audio(audio_buffer: BytesIO,
                      speech2text_override: str = None):
     """Транскрибирует собранный audio_buffer и возвращает кортеж
@@ -1024,13 +1045,9 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
     def AvailableModelsText2Text(self, request, context):
         """Получить список доступных Text2Text моделей."""
         try:
-            t = available_models(ALL_API_VARS["yandexai"]["base_url"],
-                                         ALL_API_VARS["yandexai"]["key"],
-                                         ALL_API_VARS["yandexai"]["folder"],
-                                         WHITELIST_REGEX_TEXT2TEXT,
-                                         BLACKLIST_REGEX_TEXT2TEXT)
-            add_configured_text2text_models(t)
-            return llm_pb2.StringsListResponse(strings=t)
+            return llm_pb2.StringsListResponse(
+                strings=get_text2text_models()
+            )
         except Exception as e:
             logger.error("Getting text2text models: %s", e)
             context.set_details(f"ERROR getting text2text models: {e}")
@@ -1490,6 +1507,9 @@ if __name__ == "__main__":
         if 'generated_at' not in config or not config['generated_at']:
             raise ValueError("Invalid config: missing 'generated_at'")
         for name, coef in config.get("prices_coefs", {}).items():
+            if name not in ALL_API_VARS:
+                logger.info("Skipping price config for disabled API %s", name)
+                continue
             if isinstance(coef, dict):
                 if {"text_input", "image_output"} & set(coef):
                     ALL_API_VARS[name]["image_price_config"] = coef
@@ -1523,21 +1543,15 @@ if __name__ == "__main__":
             "Authorization DISABLED - all requests will be accepted!")
     # Проверка доступности моделей
     logger.info("Checking available models...")
-    check_arr = available_models(ALL_API_VARS["yandexai"]["base_url"],
-                                 ALL_API_VARS["yandexai"]["key"],
-                                 ALL_API_VARS["yandexai"]["folder"],
-                                 WHITELIST_REGEX_TEXT2TEXT,
-                                 BLACKLIST_REGEX_TEXT2TEXT)
-    update_model_to_api(check_arr, "yandexai")
-    add_configured_text2text_models(check_arr)
+    check_arr = get_text2text_models()
     check_arr_speech=available_models(ALL_API_VARS["openai"]["base_url"],
                                       ALL_API_VARS["openai"]["key"], None,
                                       WHITELIST_REGEX_SPEECH2TEXT,
                                       BLACKLIST_REGEX_SPEECH2TEXT)
     if ALL_API_VARS["yandexai"]["model"] not in check_arr:
-        logger.error("Text2Text model %s not found",
-                     ALL_API_VARS['yandexai']['model'])
-    elif ALL_API_VARS["openai"]["model"] not in check_arr_speech:
+        logger.warning("Text2Text model %s not found",
+                       ALL_API_VARS['yandexai']['model'])
+    if ALL_API_VARS["openai"]["model"] not in check_arr_speech:
         logger.error("Speech2Text model %s not found",
                      ALL_API_VARS['openai']['model'])
     else:

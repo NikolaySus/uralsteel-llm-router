@@ -2,11 +2,11 @@ import json
 import os
 import unittest
 from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 
 os.environ.update({
     "INFERENCE_API_OPENAIVLM_MODEL": "gpt-5.6-sol",
-    "INFERENCE_API_OPENAIVLM_RENAME": "gpt-5.5",
     "INFERENCE_API_OPENAIVLM_REASONING_EFFORT": "none",
     "INFERENCE_API_OPENAIVLM_BASE_URL": "https://example.test/v1",
     "INFERENCE_API_OPENAIVLM_KEY": "test",
@@ -18,12 +18,10 @@ os.environ.update({
     "INFERENCE_API_DEEPSEEK_BASE_URL": "https://example.test/v1",
     "INFERENCE_API_DEEPSEEK_KEY": "test",
     "INFERENCE_API_OPENROUTERGEMINI_MODEL": "gemini-3.1-pro-preview",
-    "INFERENCE_API_OPENROUTERGEMINI_RENAME": "google/gemini-3.1-pro-preview",
     "INFERENCE_API_OPENROUTERGEMINI_BASE_URL": "https://openrouter.ai/api/v1",
     "INFERENCE_API_OPENROUTERGEMINI_KEY": "test",
     "INFERENCE_API_OPENROUTERGEMINI_VLM": "true",
     "INFERENCE_API_OPENROUTERCLAUDE_MODEL": "claude-opus-5",
-    "INFERENCE_API_OPENROUTERCLAUDE_RENAME": "anthropic/claude-opus-4.7",
     "INFERENCE_API_OPENROUTERCLAUDE_BASE_URL": "https://openrouter.ai/api/v1",
     "INFERENCE_API_OPENROUTERCLAUDE_KEY": "test",
     "INFERENCE_API_OPENROUTERCLAUDE_VLM": "true",
@@ -53,29 +51,62 @@ class TestModelImageSupport(unittest.TestCase):
 
     def test_openaivlm_is_image_capable_by_default(self):
         main.ALL_API_VARS["openaivlm"].pop("vlm", None)
-        self.assertTrue(main.model_supports_images("gpt-5.5"))
+        self.assertTrue(main.model_supports_images("gpt-5.6-sol"))
 
     def test_openrouter_models_are_added_and_image_capable(self):
         models = main.add_configured_text2text_models([])
 
-        self.assertIn("gpt-5.5", models)
-        self.assertIn("google/gemini-3.1-pro-preview", models)
-        self.assertIn("anthropic/claude-opus-4.7", models)
-        self.assertNotIn("claude-opus-5", models)
-        self.assertNotIn("gpt-5.6-sol", models)
-        self.assertEqual(main.MODEL_TO_API["gpt-5.5"], "openaivlm")
+        self.assertIn("gpt-5.6-sol", models)
+        self.assertIn("gemini-3.1-pro-preview", models)
+        self.assertIn("claude-opus-5", models)
+        self.assertNotIn("gpt-5.5", models)
+        self.assertNotIn("anthropic/claude-opus-4.7", models)
+        self.assertNotIn("google/gemini-3.1-pro-preview", models)
+        self.assertEqual(main.MODEL_TO_API["gpt-5.6-sol"], "openaivlm")
         self.assertEqual(
-            main.MODEL_TO_API["google/gemini-3.1-pro-preview"],
+            main.MODEL_TO_API["gemini-3.1-pro-preview"],
             "openroutergemini",
         )
         self.assertEqual(
-            main.MODEL_TO_API["anthropic/claude-opus-4.7"],
+            main.MODEL_TO_API["claude-opus-5"],
             "openrouterclaude",
         )
         self.assertTrue(
-            main.model_supports_images("google/gemini-3.1-pro-preview")
+            main.model_supports_images("gemini-3.1-pro-preview")
         )
-        self.assertTrue(main.model_supports_images("anthropic/claude-opus-4.7"))
+        self.assertTrue(main.model_supports_images("claude-opus-5"))
+
+    def test_text2text_models_fall_back_to_configured_models(self):
+        context = Mock()
+        with patch.object(
+            main,
+            "available_models",
+            side_effect=RuntimeError("Yandex unavailable"),
+        ):
+            response = main.LlmServicer().AvailableModelsText2Text(
+                None,
+                context,
+            )
+
+        self.assertIn("gpt-5.6-sol", response.strings)
+        self.assertIn("gemini-3.1-pro-preview", response.strings)
+        self.assertIn("claude-opus-5", response.strings)
+        context.set_code.assert_not_called()
+
+    def test_text2text_models_include_and_route_yandex_models(self):
+        with patch.object(
+            main,
+            "available_models",
+            return_value=["yandex-test-model"],
+        ), patch.dict(main.MODEL_TO_API, {}, clear=True):
+            models = main.get_text2text_models()
+
+            self.assertIn("yandex-test-model", models)
+            self.assertEqual(
+                main.MODEL_TO_API["yandex-test-model"],
+                "yandexai",
+            )
+            self.assertIn("gpt-5.6-sol", models)
 
     def test_openrouter_models_have_price_coefficients(self):
         with open("config.json", encoding="utf-8") as config_file:

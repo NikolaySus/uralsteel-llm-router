@@ -35,8 +35,8 @@ their OpenRouter model id as `MODEL`, for example
 - **Ответ:** `StringsListResponse` — список моделей text2text
 - **Обращения вовне:**
   - Yandex GPT (OpenAI‑совместимый endpoint) — получение списка моделей с фильтрацией по `WHITELIST_REGEX_TEXT2TEXT` / `BLACKLIST_REGEX_TEXT2TEXT`
-  - Добавляются модели из env: `openaivlm.model`, `deepseek.model`, `openaimini.model`
-- **Ошибки:** при ошибке запроса/фильтрации — `INTERNAL`, пустой список
+  - Добавляются настроенные через env text-to-text модели
+- **Ошибки:** при недоступности Yandex возвращаются настроенные через env модели; `INTERNAL` используется только если не удалось сформировать и статический список
 
 **AvailableModelsSpeech2Text (protected)**
 - **Запрос:** `google.protobuf.Empty`
