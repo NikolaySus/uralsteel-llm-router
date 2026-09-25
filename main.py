@@ -27,6 +27,9 @@ import llm_pb2
 import llm_pb2_grpc
 from auth_interceptor import AuthInterceptor
 from logger import logger
+from document_markdown import (
+    normalize_document_markdown, normalize_history_documents,
+)
 from util import (
     build_user_message, websearch, check_docling_health, convert_to_md,
     get_messages_wo_b64_images
@@ -749,7 +752,7 @@ def build_messages_from_history(history, user_message: str,
                 if isinstance(tmpd["content"], list) and any(
                     "image_url" in item for item in tmpd["content"]):
                     vlm2 = True
-                messages.append(tmpd)
+                messages.append(normalize_history_documents(tmpd))
             except S3Error as e:
                 logger.error("Getting object from MinIO: %s", e)
             except json.JSONDecodeError as e:
@@ -991,32 +994,41 @@ def proc_llm_stream_responses(price_info, log_uid, messages, tool_choice,
     reasoning_options = {}
     if reasoning_effort:
         reasoning_options["reasoning_effort"] = reasoning_effort
+    request_options = dict(
+        model=model_to_use,
+        messages=messages,
+        stream=True,
+        stream_options={"include_usage": True},
+        **reasoning_options,
+    )
     if tool_choice != "none":
-        response = OpenAI(
-            base_url=api_to_use,
-            api_key=key_to_use,
-            project=dir_to_use,
-        ).chat.completions.create(
-            model=model_to_use,
-            messages=messages,
-            stream=True,
-            stream_options={"include_usage": True},
-            tool_choice=tool_choice,
-            tools=TOOLS,
-            **reasoning_options,
-        )
-    else:
-        response = OpenAI(
-            base_url=api_to_use,
-            api_key=key_to_use,
-            project=dir_to_use,
-        ).chat.completions.create(
-            model=model_to_use,
-            messages=messages,
-            stream=True,
-            stream_options={"include_usage": True},
-            **reasoning_options,
-        )
+        request_options.update(tool_choice=tool_choice, tools=TOOLS)
+    text_lengths = []
+    image_count = 0
+    for message in messages:
+        message_content = message.get("content")
+        if isinstance(message_content, str):
+            text_lengths.append(len(message_content))
+        elif isinstance(message_content, list):
+            for block in message_content:
+                if block.get("type") == "text":
+                    text_lengths.append(len(block.get("text", "")))
+                elif block.get("type") == "image_url":
+                    image_count += 1
+    json_bytes = sum(len(part.encode("utf-8")) for part in json.JSONEncoder(
+        ensure_ascii=False, separators=(",", ":")
+    ).iterencode(request_options))
+    logger.info(
+        "(%s) LLM request size model=%s text_chars=%s max_text_chars=%s "
+        "images=%s estimated_json_bytes=%s",
+        log_uid, model_to_use, sum(text_lengths), max(text_lengths, default=0),
+        image_count, json_bytes,
+    )
+    response = OpenAI(
+        base_url=api_to_use,
+        api_key=key_to_use,
+        project=dir_to_use,
+    ).chat.completions.create(**request_options)
     try:
         id_ = ""
         nm_ = ""
@@ -1151,6 +1163,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                     filename, md_content = convert_to_md(url, DOCLING_ADDRESS)
                     if filename is None or md_content is None:
                         raise ValueError("Parse file error")
+                    md_content = normalize_document_markdown(
+                        md_content, source=f"{log_uid}:document")
                     md_docs[filename] = md_content
                     # Разбиваем контент на чанки размером CHUNK_SIZE
                     for i in range(0, len(md_content), CHUNK_SIZE):
@@ -1170,7 +1184,8 @@ class LlmServicer(llm_pb2_grpc.LlmServicer):
                         with httpx.Client(timeout=60.0) as client:
                             response = client.get(md_url_obj.url)
                             md_content = response.text
-                        md_docs[md_url_obj.original_name] = md_content
+                        md_docs[md_url_obj.original_name] = normalize_document_markdown(
+                            md_content, source=f"{log_uid}:markdown_url")
                     except Exception as e:
                         logger.error("(%s) Error loading md from %s: %s",
                                      log_uid, md_url_obj.url, e)

@@ -1,6 +1,7 @@
 import json
 import os
 import unittest
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import Mock, patch
 
@@ -43,6 +44,56 @@ for env_name, env_value in os.environ.items():
 
 
 class TestModelImageSupport(unittest.TestCase):
+    def test_new_documents_are_compacted_before_chunks_and_storage(self):
+        markdown = "|  A  |  B  |\n|----------|----------|\n|  C  |  D  |\n"
+        compact = "| A | B |\n| --- | --- |\n| C | D |\n"
+        for from_url in (False, True):
+            with self.subTest(markdown_url=from_url):
+                request = SimpleNamespace(
+                    msg="User    text", history=[], text2text_model="gpt-5.6-sol",
+                    function="", images_urls=[],
+                    documents_urls=[] if from_url else ["https://files.test/a.docx"],
+                    markdown_urls=[SimpleNamespace(
+                        original_name="a.docx", url="https://files.test/a.md"
+                    )] if from_url else [],
+                )
+                storage = Mock()
+                http = Mock()
+                http.get.return_value.text = markdown
+                with patch.object(main, "generate_chat_name", return_value=None), patch.object(
+                    main, "convert_to_md", return_value=("a.docx", markdown)
+                ), patch.object(main, "Minio", return_value=storage), patch.object(
+                    main.httpx, "Client"
+                ) as http_class:
+                    http_class.return_value.__enter__.return_value = http
+                    stream = main.LlmServicer().NewMessage(request, Mock())
+                    responses = []
+                    for response in stream:
+                        responses.append(response)
+                        if response.user_message_uid:
+                            break
+                    stream.close()
+                payload = json.loads(storage.put_object.call_args.args[2].getvalue())
+                text = "".join(b.get("text", "") for b in payload["content"])
+                self.assertIn(compact, text)
+                self.assertEqual(payload["content"][-1]["text"], "User    text")
+                chunks = "".join(r.markdown_chunk.markdown_chunk for r in responses)
+                self.assertEqual(chunks, "" if from_url else compact)
+
+    def test_history_is_compacted_without_writing_objects(self):
+        original = {"role": "user", "content": [{"type": "text", "text": (
+            '# FILE "a.docx" BEGIN\n|  A  | B |\n|------|------|\n'
+            '# FILE "a.docx" END'
+        )}]}
+        storage = Mock()
+        storage.get_object.return_value = BytesIO(json.dumps(original).encode())
+        current = {"role": "user", "content": "next"}
+        with patch.object(main, "Minio", return_value=storage):
+            messages, _ = main.build_messages_from_history(["stored"], current, "model")
+        self.assertIn("| --- | --- |", messages[1]["content"][0]["text"])
+        self.assertEqual(messages[-1], current)
+        storage.put_object.assert_not_called()
+
     def test_env_flag_marks_openaimini_as_image_capable(self):
         self.assertTrue(main.model_supports_images("test-mini"))
 

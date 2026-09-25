@@ -10,6 +10,35 @@ import main
 
 
 class TestStreamChunkResponse(unittest.TestCase):
+    def test_request_size_includes_images_tools_and_reasoning(self):
+        messages = [
+            {"role": "user", "content": [
+                {"type": "text", "text": "\u0442\u0435\u043a\u0441\u0442"},
+                {"type": "image_url", "image_url": {
+                    "url": "data:image/png;base64," + "A" * 10000}},
+            ]},
+            {"role": "tool", "tool_call_id": "call-1", "content": "result"},
+        ]
+        for choice in ("none", {"type": "function", "function": {"name": "websearch"}}):
+            client = MagicMock()
+            client.chat.completions.create.return_value.__iter__.return_value = iter([])
+            with patch.object(main, "OpenAI", return_value=client), patch.object(
+                main.logger, "info"
+            ) as info:
+                list(main.proc_llm_stream_responses(
+                    {}, "size-test", messages, choice,
+                    "https://example.test/v1", "secret-key", None,
+                    "model", 0, 0, "none",
+                ))
+            payload = client.chat.completions.create.call_args.kwargs
+            expected = len(json.dumps(
+                payload, ensure_ascii=False, separators=(",", ":")
+            ).encode("utf-8"))
+            size_log = next(c.args for c in info.call_args_list if "estimated_json_bytes" in c.args[0])
+            self.assertEqual(size_log[1:], ("size-test", "model", 11, 6, 1, expected))
+            self.assertNotIn("secret-key", str(size_log))
+            self.assertNotIn("base64", str(size_log))
+
     def test_reasoning_effort_is_sent_without_tools(self):
         client = MagicMock()
         stream = MagicMock()
